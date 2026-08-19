@@ -3,7 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { sql } from "./db";
-import { requireAuth, signIn, signOut } from "./auth";
+import {
+  hashPassword,
+  hasUsers,
+  normalizePhone,
+  requireAuth,
+  signOut,
+  startSession,
+  verifyPassword,
+} from "./auth";
 
 function s(fd: FormData, k: string): string | null {
   const v = fd.get(k);
@@ -18,17 +26,125 @@ function n(fd: FormData, k: string): number | null {
   return Number.isFinite(x) ? x : null;
 }
 
-/* ---------- ورود ---------- */
+/* ---------- ورود و کاربران ---------- */
 
 export async function loginAction(_prev: string | null, fd: FormData) {
-  const ok = await signIn(String(fd.get("password") ?? ""));
-  if (!ok) return "رمز عبور نادرست است";
+  const phone = normalizePhone(String(fd.get("phone") ?? ""));
+  const password = String(fd.get("password") ?? "");
+  if (!phone || !password) return "شماره موبایل و رمز عبور را وارد کنید";
+
+  const rows = await sql`select id, password_hash, is_active from users where phone = ${phone}`;
+  const user = rows[0];
+  // پیام یکسان تا مشخص نشود کدام شماره در سیستم هست
+  if (!user || !verifyPassword(password, String(user.password_hash))) {
+    return "شماره موبایل یا رمز عبور نادرست است";
+  }
+  if (!user.is_active) return "حساب شما غیرفعال شده است";
+
+  await startSession(Number(user.id));
+  redirect("/");
+}
+
+/** ساخت اولین کاربر وقتی هیچ کاربری وجود ندارد */
+export async function setupAction(_prev: string | null, fd: FormData) {
+  if (await hasUsers()) return "کاربر اولیه قبلاً ساخته شده است";
+
+  const phone = normalizePhone(String(fd.get("phone") ?? ""));
+  const password = String(fd.get("password") ?? "");
+  const first = s(fd, "first_name");
+  const last = s(fd, "last_name");
+  if (!phone || !first || !last) return "همه فیلدها لازم است";
+  if (password.length < 6) return "رمز عبور باید حداقل ۶ کاراکتر باشد";
+
+  const [row] = await sql`
+    insert into users (phone, first_name, last_name, password_hash)
+    values (${phone}, ${first}, ${last}, ${hashPassword(password)})
+    returning id
+  `;
+  await startSession(Number(row.id));
   redirect("/");
 }
 
 export async function logoutAction() {
   await signOut();
   redirect("/login");
+}
+
+export async function createUser(_prev: string | null, fd: FormData) {
+  await requireAuth();
+  const phone = normalizePhone(String(fd.get("phone") ?? ""));
+  const password = String(fd.get("password") ?? "");
+  const first = s(fd, "first_name");
+  const last = s(fd, "last_name");
+  if (!phone || !first || !last) return "نام، نام خانوادگی و شماره موبایل لازم است";
+  if (password.length < 6) return "رمز عبور باید حداقل ۶ کاراکتر باشد";
+
+  const dup = await sql`select 1 from users where phone = ${phone}`;
+  if (dup.length) return "این شماره موبایل قبلاً ثبت شده است";
+
+  await sql`
+    insert into users (phone, first_name, last_name, password_hash)
+    values (${phone}, ${first}, ${last}, ${hashPassword(password)})
+  `;
+  revalidatePath("/users");
+  return null;
+}
+
+export async function resetPassword(_prev: string | null, fd: FormData) {
+  await requireAuth();
+  const id = Number(fd.get("id"));
+  const password = String(fd.get("password") ?? "");
+  if (password.length < 6) return "رمز عبور باید حداقل ۶ کاراکتر باشد";
+  await sql`update users set password_hash = ${hashPassword(password)} where id = ${id}`;
+  revalidatePath("/users");
+  return null;
+}
+
+/** تغییر رمز توسط خود کاربر با تأیید رمز فعلی */
+export async function changeOwnPassword(_prev: string | null, fd: FormData) {
+  const me = await requireAuth();
+  const current = String(fd.get("current_password") ?? "");
+  const next = String(fd.get("password") ?? "");
+  if (next.length < 6) return "رمز جدید باید حداقل ۶ کاراکتر باشد";
+
+  const [row] = await sql`select password_hash from users where id = ${me.id}`;
+  if (!row || !verifyPassword(current, String(row.password_hash))) {
+    return "رمز فعلی نادرست است";
+  }
+  await sql`update users set password_hash = ${hashPassword(next)} where id = ${me.id}`;
+  revalidatePath("/users");
+  return null;
+}
+
+export async function updateUser(fd: FormData) {
+  await requireAuth();
+  const id = Number(fd.get("id"));
+  await sql`
+    update users set
+      first_name = ${s(fd, "first_name") ?? ""},
+      last_name  = ${s(fd, "last_name") ?? ""},
+      phone      = ${normalizePhone(String(fd.get("phone") ?? ""))}
+    where id = ${id}
+  `;
+  revalidatePath("/users");
+}
+
+export async function toggleUserActive(fd: FormData) {
+  const me = await requireAuth();
+  const id = Number(fd.get("id"));
+  if (id === me.id) return; // نمی‌توان حساب خود را غیرفعال کرد
+  await sql`update users set is_active = not is_active where id = ${id}`;
+  revalidatePath("/users");
+}
+
+export async function deleteUser(fd: FormData) {
+  const me = await requireAuth();
+  const id = Number(fd.get("id"));
+  if (id === me.id) return; // نمی‌توان حساب خود را حذف کرد
+  const [{ n }] = await sql`select count(*)::int as n from users where is_active`;
+  if (Number(n) <= 1) return; // آخرین کاربر فعال باقی بماند
+  await sql`delete from users where id = ${id}`;
+  revalidatePath("/users");
 }
 
 /* ---------- فاکتور ---------- */

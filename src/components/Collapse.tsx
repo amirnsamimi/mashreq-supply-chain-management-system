@@ -15,11 +15,15 @@ export function Collapse({
     <>
       <button
         onClick={() => setOpen(!open)}
-        className="rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700"
+        className="inline-flex items-center gap-1.5 rounded-[var(--geist-radius)] bg-[var(--geist-foreground)] px-3.5 py-2 text-sm font-medium text-[var(--geist-background)] transition hover:opacity-85"
       >
-        {open ? "بستن" : label}
+        {open ? "بستن" : `+ ${label}`}
       </button>
-      {open && <div className="mt-3">{children}</div>}
+      {open && (
+        <div className="mt-3 w-full basis-full">
+          {children}
+        </div>
+      )}
     </>
   );
 }

@@ -11,7 +11,10 @@ import {
   deleteAllocation,
 } from "@/lib/actions";
 import { MODES } from "@/lib/lists";
-import { Page, Card, Badge, Btn, Field, Stat, Empty } from "@/components/ui";
+import { Page, Card, Badge, Field, Stat, Empty } from "@/components/ui";
+import { NumberInput } from "@/components/NumberInput";
+import { AllocationPicker } from "@/components/AllocationPicker";
+import { SubmitBtn } from "@/components/Confirm";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +23,7 @@ export default async function ShipmentPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireAuth();
+  const me = await requireAuth();
   const id = Number((await params).id);
   const sh = await getShipment(id);
   if (!sh) notFound();
@@ -31,6 +34,7 @@ export default async function ShipmentPage({
   return (
     <Page
       active="/shipments"
+      user={`${me.first_name} ${me.last_name}`}
       title={
         <span className="flex items-center gap-3">
           پارت {sh.shipment_no}
@@ -38,7 +42,7 @@ export default async function ShipmentPage({
         </span>
       }
       action={
-        <Link href="/shipments" className="text-sm text-gray-500 hover:underline">
+        <Link href="/shipments" className="text-sm text-[var(--geist-secondary)] hover:underline">
           ← بازگشت به فهرست
         </Link>
       }
@@ -56,7 +60,7 @@ export default async function ShipmentPage({
           {allocs.length === 0 ? (
             <Empty>هنوز کالایی به این پارت تخصیص نیافته است</Empty>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="scroll-x">
               <table>
                 <thead>
                   <tr>
@@ -81,19 +85,19 @@ export default async function ShipmentPage({
                             {a.invoice_no as string}
                           </Link>
                         </td>
-                        <td>{(a.sku as string) ?? "—"}</td>
-                        <td className="max-w-56 truncate">{(a.description as string) ?? "—"}</td>
-                        <td className="num text-gray-500">{fq(a.item_qty)}</td>
+                        <td>{a.sku ?? "—"}</td>
+                        <td className="max-w-56 truncate">{a.description ?? "—"}</td>
+                        <td className="num text-[var(--geist-secondary)]">{fq(a.item_qty)}</td>
                         <td>
                           <form action={updateAllocation} className="flex items-center gap-1">
                             <input type="hidden" name="id" value={a.id} />
                             <input type="hidden" name="shipment_id" value={id} />
-                            <input name="qty_shipped" defaultValue={a.qty_shipped} title="تعداد ارسال‌شده" placeholder="ارسال" className="!w-24 !py-1" inputMode="decimal" />
-                            <input name="qty_received" defaultValue={a.qty_received} title="تعداد دریافت‌شده" placeholder="دریافت" className="!w-24 !py-1" inputMode="decimal" />
-                            <Btn variant="ghost" className="!py-1">ذخیره</Btn>
+                            <NumberInput name="qty_shipped" defaultValue={a.qty_shipped} title="تعداد ارسال‌شده" placeholder="ارسال" className="!w-24 !py-1" />
+                            <NumberInput name="qty_received" defaultValue={a.qty_received} title="تعداد دریافت‌شده" placeholder="دریافت" className="!w-24 !py-1" />
+                            <SubmitBtn variant="ghost" className="!py-1 !px-2 !text-xs">ذخیره</SubmitBtn>
                           </form>
                         </td>
-                        <td className={`num ${a.variance > 0 ? "text-amber-600" : "text-gray-400"}`}>
+                        <td className={`num ${a.variance > 0 ? "text-[var(--geist-amber-text)]" : "text-[var(--geist-tertiary)]"}`}>
                           {fq(a.variance)}
                         </td>
                         <td className="num">{money(share)}</td>
@@ -101,7 +105,7 @@ export default async function ShipmentPage({
                           <form action={deleteAllocation}>
                             <input type="hidden" name="id" value={a.id} />
                             <input type="hidden" name="shipment_id" value={id} />
-                            <Btn variant="danger">حذف</Btn>
+                            <SubmitBtn variant="danger" confirm="این تخصیص از پارت حذف شود؟">حذف</SubmitBtn>
                           </form>
                         </td>
                       </tr>
@@ -112,23 +116,12 @@ export default async function ShipmentPage({
             </div>
           )}
 
-          <div className="border-t border-gray-200 p-4">
-            <form action={createAllocation} className="grid gap-3 md:grid-cols-4">
+          <div className="border-t border-[var(--geist-border)] p-4">
+            <form action={createAllocation}>
               <input type="hidden" name="shipment_id" value={id} />
-              <Field label="کالا (از فاکتورها)" className="md:col-span-2">
-                <select name="item_id" required defaultValue="">
-                  <option value="" disabled>انتخاب کنید…</option>
-                  {openItems.map((it) => (
-                    <option key={it.id} value={it.id}>
-                      {it.invoice_no} — {it.sku ?? it.description ?? `قلم ${it.id}`} (باقی‌مانده: {it.remaining})
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="تعداد ارسال در این پارت"><input name="qty_shipped" inputMode="decimal" defaultValue="0" /></Field>
-              <div className="flex items-end"><Btn>+ افزودن کالا به پارت</Btn></div>
+              <AllocationPicker items={openItems} />
             </form>
-            <p className="mt-2 text-xs text-gray-400">
+            <p className="mt-3 text-xs text-[var(--geist-tertiary)]">
               هزینه حمل این پارت به نسبت تعداد، بین اقلام سرشکن می‌شود و در بهای تمام‌شده هر واحد در صفحه فاکتور دیده می‌شود.
             </p>
           </div>
@@ -140,26 +133,26 @@ export default async function ShipmentPage({
           <form action={updateShipment} className="grid gap-3 p-4 md:grid-cols-4">
             <input type="hidden" name="id" value={id} />
             <Field label="شماره پارت"><input name="shipment_no" defaultValue={sh.shipment_no} required /></Field>
-            <Field label="نام کارگو"><input name="carrier" defaultValue={(sh.carrier as string) ?? ""} /></Field>
+            <Field label="نام کارگو"><input name="carrier" defaultValue={sh.carrier ?? ""} /></Field>
             <Field label="نوع حمل">
-              <select name="mode" defaultValue={(sh.mode as string) ?? ""}>
+              <select name="mode" defaultValue={sh.mode ?? ""}>
                 <option value="">—</option>
                 {MODES.map((m) => <option key={m}>{m}</option>)}
               </select>
             </Field>
-            <Field label="شماره رهگیری"><input name="tracking_no" defaultValue={(sh.tracking_no as string) ?? ""} /></Field>
-            <Field label="تحویل به کارگو"><input name="handover_date" type="date" defaultValue={isoDate(sh.handover_date as string)} /></Field>
-            <Field label="تاریخ خروج"><input name="depart_date" type="date" defaultValue={isoDate(sh.depart_date as string)} /></Field>
-            <Field label="تاریخ دریافت"><input name="receive_date" type="date" defaultValue={isoDate(sh.receive_date as string)} /></Field>
-            <Field label="هزینه حمل پارت"><input name="freight_cost" defaultValue={sh.freight_cost} inputMode="decimal" /></Field>
-            <Field label="وزن (کیلو)"><input name="weight_kg" defaultValue={(sh.weight_kg as string) ?? ""} inputMode="decimal" /></Field>
-            <Field label="حجم CBM"><input name="cbm" defaultValue={(sh.cbm as string) ?? ""} inputMode="decimal" /></Field>
-            <Field label="توضیحات" className="md:col-span-2"><input name="notes" defaultValue={(sh.notes as string) ?? ""} /></Field>
-            <div className="md:col-span-4"><Btn>ذخیره تغییرات</Btn></div>
+            <Field label="شماره رهگیری"><input name="tracking_no" defaultValue={sh.tracking_no ?? ""} /></Field>
+            <Field label="تحویل به کارگو"><input name="handover_date" dir="ltr" type="date" defaultValue={isoDate(sh.handover_date)} /></Field>
+            <Field label="تاریخ خروج"><input name="depart_date" dir="ltr" type="date" defaultValue={isoDate(sh.depart_date)} /></Field>
+            <Field label="تاریخ دریافت"><input name="receive_date" dir="ltr" type="date" defaultValue={isoDate(sh.receive_date)} /></Field>
+            <Field label="هزینه حمل پارت"><NumberInput name="freight_cost" defaultValue={sh.freight_cost} /></Field>
+            <Field label="وزن (کیلو)"><NumberInput name="weight_kg" defaultValue={sh.weight_kg} /></Field>
+            <Field label="حجم CBM"><NumberInput name="cbm" defaultValue={sh.cbm} /></Field>
+            <Field label="توضیحات" className="md:col-span-2"><input name="notes" defaultValue={sh.notes ?? ""} /></Field>
+            <div className="md:col-span-4"><SubmitBtn>ذخیره تغییرات</SubmitBtn></div>
           </form>
-          <form action={deleteShipment} className="border-t border-gray-200 p-4">
+          <form action={deleteShipment} className="border-t border-[var(--geist-border)] p-4">
             <input type="hidden" name="id" value={id} />
-            <Btn variant="danger">حذف این پارت</Btn>
+            <SubmitBtn variant="danger" confirm="این پارت و همه تخصیص‌های آن حذف شود؟">حذف این پارت</SubmitBtn>
           </form>
         </Card>
       </div>

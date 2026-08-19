@@ -59,3 +59,14 @@ create index if not exists idx_items_invoice on invoice_items(invoice_id);
 create index if not exists idx_alloc_item on allocations(item_id);
 create index if not exists idx_alloc_shipment on allocations(shipment_id);
 create index if not exists idx_pay_invoice on payments(invoice_id);
+
+-- کاربران (ورود با شماره موبایل و رمز)
+create table if not exists users (
+  id            serial primary key,
+  phone         text not null unique,
+  first_name    text not null,
+  last_name     text not null,
+  password_hash text not null,
+  is_active     boolean not null default true,
+  created_at    timestamptz default now()
+);

@@ -18,8 +18,9 @@ import {
   deletePayment,
 } from "@/lib/actions";
 import { CURRENCIES, PAY_METHODS } from "@/lib/lists";
-import { Page, Card, Badge, Btn, Field, Stat, Empty } from "@/components/ui";
-import { Collapse } from "@/components/Collapse";
+import { Page, Card, Badge, Field, Stat, Empty } from "@/components/ui";
+import { NumberInput } from "@/components/NumberInput";
+import { SubmitBtn } from "@/components/Confirm";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,7 @@ export default async function InvoicePage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireAuth();
+  const me = await requireAuth();
   const id = Number((await params).id);
   const inv = await getInvoice(id);
   if (!inv) notFound();
@@ -40,11 +41,12 @@ export default async function InvoicePage({
       items.map(async (it) => [it.id, await listAllocationsForItem(it.id)] as const)
     )
   );
-  const cur = (inv.currency as string) ?? "";
+  const cur = inv.currency ?? "";
 
   return (
     <Page
       active="/invoices"
+      user={`${me.first_name} ${me.last_name}`}
       title={
         <span className="flex items-center gap-3">
           فاکتور {inv.invoice_no}
@@ -53,22 +55,22 @@ export default async function InvoicePage({
         </span>
       }
       action={
-        <Link href="/invoices" className="text-sm text-gray-500 hover:underline">
+        <Link href="/invoices" className="text-sm text-[var(--geist-secondary)] hover:underline">
           ← بازگشت به فهرست
         </Link>
       }
     >
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <Stat label={`مبلغ کل (${cur})`} value={money(inv.total_amount)} />
-        <Stat label="جمع مبلغ اقلام" value={money(inv.items_total)} hint={`${items.length} قلم`} />
+        <Stat label={`جمع مبلغ اقلام (${cur})`} value={money(inv.items_total)} hint={`${items.length} قلم`} />
         <Stat
           label="اختلاف فاکتور و اقلام"
           value={money(inv.diff)}
           tone={Math.abs(inv.diff) > 0.01 ? "warn" : "good"}
         />
-        <Stat label="جمع پرداختی" value={money(inv.paid)} tone="good"
+        <Stat label={`جمع پرداختی (${cur})`} value={money(inv.paid)} tone="good"
           hint={inv.last_payment_date ? `آخرین: ${jalali(inv.last_payment_date)}` : undefined} />
-        <Stat label="مانده" value={money(inv.balance)} tone={inv.balance > 0 ? "warn" : "good"} />
+        <Stat label={`مانده (${cur})`} value={money(inv.balance)} tone={inv.balance > 0 ? "warn" : "good"} />
       </div>
 
       {/* اقلام */}
@@ -77,7 +79,7 @@ export default async function InvoicePage({
           {items.length === 0 ? (
             <Empty>قلمی ثبت نشده است</Empty>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="scroll-x">
               <table>
                 <thead>
                   <tr>
@@ -99,13 +101,13 @@ export default async function InvoicePage({
                 <tbody>
                   {items.map((it) => (
                     <tr key={it.id}>
-                      <td className="font-medium">{(it.sku as string) ?? "—"}</td>
-                      <td className="max-w-56 truncate">{(it.description as string) ?? "—"}</td>
+                      <td className="font-medium">{it.sku ?? "—"}</td>
+                      <td className="max-w-56 truncate">{it.description ?? "—"}</td>
                       <td className="num">{fq(it.qty)}</td>
                       <td className="num">{money(it.unit_price)}</td>
                       <td className="num">{money(it.line_total)}</td>
                       <td className="num">{fq(it.allocated)}</td>
-                      <td className={`num ${it.remaining > 0 ? "text-amber-600" : "text-gray-400"}`}>
+                      <td className={`num ${it.remaining > 0 ? "text-[var(--geist-amber-text)]" : "text-[var(--geist-tertiary)]"}`}>
                         {fq(it.remaining)}
                       </td>
                       <td className="num">{fq(it.in_transit)}</td>
@@ -115,23 +117,23 @@ export default async function InvoicePage({
                       <td><Badge>{it.status}</Badge></td>
                       <td>
                         <details className="inline-block">
-                          <summary className="cursor-pointer text-xs text-gray-400 hover:text-gray-700">
+                          <summary className="cursor-pointer text-xs text-[var(--geist-tertiary)] hover:text-[var(--geist-foreground)]">
                             ویرایش
                           </summary>
-                          <div className="absolute z-10 mt-2 w-72 rounded-xl border border-gray-200 bg-white p-3 shadow-lg">
+                          <div className="absolute z-10 mt-2 w-72 rounded-[var(--geist-radius-lg)] border border-[var(--geist-border)] bg-[var(--geist-background)] p-3 shadow-[var(--geist-shadow)]">
                             <form action={updateItem} className="grid gap-2">
                               <input type="hidden" name="id" value={it.id} />
                               <input type="hidden" name="invoice_id" value={id} />
-                              <Field label="SKU"><input name="sku" defaultValue={(it.sku as string) ?? ""} /></Field>
-                              <Field label="شرح"><input name="description" defaultValue={(it.description as string) ?? ""} /></Field>
-                              <Field label="تعداد"><input name="qty" defaultValue={it.qty} inputMode="decimal" /></Field>
-                              <Field label="قیمت واحد"><input name="unit_price" defaultValue={it.unit_price} inputMode="decimal" /></Field>
-                              <Btn>ذخیره</Btn>
+                              <Field label="SKU"><input name="sku" defaultValue={it.sku ?? ""} /></Field>
+                              <Field label="شرح"><input name="description" defaultValue={it.description ?? ""} /></Field>
+                              <Field label="تعداد"><NumberInput name="qty" defaultValue={it.qty} /></Field>
+                              <Field label="قیمت واحد"><NumberInput name="unit_price" defaultValue={it.unit_price} /></Field>
+                              <SubmitBtn>ذخیره</SubmitBtn>
                             </form>
-                            <form action={deleteItem} className="mt-2 border-t border-gray-100 pt-2">
+                            <form action={deleteItem} className="mt-2 border-t border-[var(--geist-border)] pt-2">
                               <input type="hidden" name="id" value={it.id} />
                               <input type="hidden" name="invoice_id" value={id} />
-                              <Btn variant="danger">حذف این قلم</Btn>
+                              <SubmitBtn variant="danger" confirm="این قلم و تخصیص‌های آن به پارت‌ها حذف شود؟">حذف این قلم</SubmitBtn>
                             </form>
                           </div>
                         </details>
@@ -143,14 +145,14 @@ export default async function InvoicePage({
             </div>
           )}
 
-          <div className="border-t border-gray-200 p-4">
+          <div className="border-t border-[var(--geist-border)] p-4">
             <form action={createItem} className="grid gap-3 md:grid-cols-6">
               <input type="hidden" name="invoice_id" value={id} />
               <Field label="کد کالا / SKU"><input name="sku" /></Field>
               <Field label="شرح کالا" className="md:col-span-2"><input name="description" /></Field>
-              <Field label="تعداد"><input name="qty" inputMode="decimal" defaultValue="0" /></Field>
-              <Field label="قیمت واحد"><input name="unit_price" inputMode="decimal" defaultValue="0" /></Field>
-              <div className="flex items-end"><Btn>+ افزودن قلم</Btn></div>
+              <Field label="تعداد"><NumberInput name="qty" defaultValue={0} /></Field>
+              <Field label="قیمت واحد"><NumberInput name="unit_price" defaultValue={0} /></Field>
+              <div className="flex items-end"><SubmitBtn>افزودن قلم</SubmitBtn></div>
             </form>
           </div>
         </Card>
@@ -160,7 +162,7 @@ export default async function InvoicePage({
       {items.some((it) => (allocsByItem[it.id] ?? []).length > 0) && (
         <div className="mt-6">
           <Card title="ارسال اقلام در پارت‌ها">
-            <div className="overflow-x-auto">
+            <div className="scroll-x">
               <table>
                 <thead>
                   <tr>
@@ -177,19 +179,19 @@ export default async function InvoicePage({
                   {items.flatMap((it) =>
                     (allocsByItem[it.id] ?? []).map((a) => (
                       <tr key={a.id}>
-                        <td>{(it.sku as string) ?? (it.description as string) ?? "—"}</td>
+                        <td>{(it.sku as string) ?? it.description ?? "—"}</td>
                         <td>
                           <Link href={`/shipments/${a.shipment_id}`} className="font-medium hover:underline">
                             {a.shipment_no as string}
                           </Link>
                         </td>
-                        <td>{(a.carrier as string) ?? "—"}</td>
+                        <td>{a.carrier ?? "—"}</td>
                         <td className="num">{fq(a.qty_shipped)}</td>
                         <td className="num">{fq(a.qty_received)}</td>
-                        <td className={`num ${a.qty_shipped - a.qty_received > 0 ? "text-amber-600" : "text-gray-400"}`}>
+                        <td className={`num ${a.qty_shipped - a.qty_received > 0 ? "text-[var(--geist-amber-text)]" : "text-[var(--geist-tertiary)]"}`}>
                           {fq(a.qty_shipped - a.qty_received)}
                         </td>
-                        <td>{jalali(a.receive_date as string)}</td>
+                        <td>{jalali(a.receive_date)}</td>
                       </tr>
                     ))
                   )}
@@ -220,16 +222,16 @@ export default async function InvoicePage({
               <tbody>
                 {payments.map((p) => (
                   <tr key={p.id}>
-                    <td>{jalali(p.payment_date as string)}</td>
+                    <td>{jalali(p.payment_date)}</td>
                     <td className="num font-medium">{money(p.amount)}</td>
-                    <td>{(p.method as string) ?? "—"}</td>
-                    <td>{(p.reference as string) ?? "—"}</td>
-                    <td className="text-gray-500">{(p.notes as string) ?? "—"}</td>
+                    <td>{p.method ?? "—"}</td>
+                    <td>{p.reference ?? "—"}</td>
+                    <td className="text-[var(--geist-secondary)]">{p.notes ?? "—"}</td>
                     <td>
                       <form action={deletePayment}>
                         <input type="hidden" name="id" value={p.id} />
                         <input type="hidden" name="invoice_id" value={id} />
-                        <Btn variant="danger">حذف</Btn>
+                        <SubmitBtn variant="danger" confirm="این پرداخت حذف شود؟">حذف</SubmitBtn>
                       </form>
                     </td>
                   </tr>
@@ -237,18 +239,18 @@ export default async function InvoicePage({
               </tbody>
             </table>
           )}
-          <div className="border-t border-gray-200 p-4">
+          <div className="border-t border-[var(--geist-border)] p-4">
             <form action={createPayment} className="grid gap-3 md:grid-cols-5">
               <input type="hidden" name="invoice_id" value={id} />
               <Field label="تاریخ پرداخت"><input name="payment_date" type="date" /></Field>
-              <Field label="مبلغ"><input name="amount" inputMode="decimal" defaultValue="0" /></Field>
+              <Field label="مبلغ"><NumberInput name="amount" defaultValue={0} /></Field>
               <Field label="روش">
                 <select name="method">
                   {PAY_METHODS.map((m) => <option key={m}>{m}</option>)}
                 </select>
               </Field>
               <Field label="مرجع/رسید"><input name="reference" /></Field>
-              <div className="flex items-end"><Btn>+ ثبت پرداخت</Btn></div>
+              <div className="flex items-end"><SubmitBtn>ثبت پرداخت</SubmitBtn></div>
             </form>
           </div>
         </Card>
@@ -257,21 +259,21 @@ export default async function InvoicePage({
           <form action={updateInvoice} className="grid gap-3 p-4">
             <input type="hidden" name="id" value={id} />
             <Field label="شماره فاکتور"><input name="invoice_no" defaultValue={inv.invoice_no} required /></Field>
-            <Field label="فروشنده"><input name="supplier" defaultValue={(inv.supplier as string) ?? ""} /></Field>
-            <Field label="تاریخ فاکتور"><input name="invoice_date" type="date" defaultValue={isoDate(inv.invoice_date as string)} /></Field>
+            <Field label="فروشنده"><input name="supplier" defaultValue={inv.supplier ?? ""} /></Field>
+            <Field label="تاریخ فاکتور"><input name="invoice_date" type="date" defaultValue={isoDate(inv.invoice_date)} /></Field>
             <Field label="ارز">
               <select name="currency" defaultValue={cur}>
                 {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
               </select>
             </Field>
-            <Field label="مبلغ کل فاکتور"><input name="total_amount" defaultValue={inv.total_amount} inputMode="decimal" /></Field>
-            <Field label="تاریخ سررسید"><input name="due_date" type="date" defaultValue={isoDate(inv.due_date as string)} /></Field>
-            <Field label="توضیحات"><textarea name="notes" rows={2} defaultValue={(inv.notes as string) ?? ""} /></Field>
-            <Btn>ذخیره تغییرات</Btn>
+            <Field label="مبلغ کل فاکتور"><NumberInput name="total_amount" defaultValue={inv.total_amount} /></Field>
+            <Field label="تاریخ سررسید"><input name="due_date" type="date" defaultValue={isoDate(inv.due_date)} /></Field>
+            <Field label="توضیحات"><textarea name="notes" rows={2} defaultValue={inv.notes ?? ""} /></Field>
+            <SubmitBtn>ذخیره تغییرات</SubmitBtn>
           </form>
-          <form action={deleteInvoice} className="border-t border-gray-200 p-4">
+          <form action={deleteInvoice} className="border-t border-[var(--geist-border)] p-4">
             <input type="hidden" name="id" value={id} />
-            <Btn variant="danger">حذف فاکتور و همه اقلام و پرداخت‌های آن</Btn>
+            <SubmitBtn variant="danger" confirm="کل فاکتور با همه اقلام، تخصیص‌ها و پرداخت‌هایش حذف شود؟ این کار برگشت‌پذیر نیست.">حذف فاکتور و همه اقلام و پرداخت‌های آن</SubmitBtn>
           </form>
         </Card>
       </div>

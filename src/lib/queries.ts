@@ -320,23 +320,30 @@ export async function listOpenItems() {
 /* ---------- داشبورد ---------- */
 
 export async function dashboard() {
-  const [inv] = await sql`
-    select count(*)::int as invoices,
-           coalesce(sum(total_amount), 0) as total_amount
-    from invoices
-  `;
-  const [pay] = await sql`select coalesce(sum(amount), 0) as paid from payments`;
-  const [it] = await sql`select count(*)::int as items from invoice_items`;
-  const shipments = await listShipments();
   const invoices = await listInvoices();
+  const shipments = await listShipments();
+  const [it] = await sql`select count(*)::int as items from invoice_items`;
+
+  // جمع مبالغ باید به تفکیک ارز باشد؛ جمع کردن RMB و USD با هم بی‌معناست
+  const byCurrency = new Map<string, { total: number; paid: number; balance: number }>();
+  for (const i of invoices) {
+    const cur = i.currency ?? "—";
+    const acc = byCurrency.get(cur) ?? { total: 0, paid: 0, balance: 0 };
+    acc.total += i.total_amount;
+    acc.paid += i.paid;
+    acc.balance += i.balance;
+    byCurrency.set(cur, acc);
+  }
+
   return {
-    invoices: num(inv.invoices),
+    invoices: invoices.length,
     items: num(it.items),
-    totalAmount: num(inv.total_amount),
-    paid: num(pay.paid),
-    balance: invoices.reduce((s, i) => s + i.balance, 0),
+    currencies: [...byCurrency.entries()]
+      .map(([currency, v]) => ({ currency, ...v }))
+      .sort((a, b) => b.total - a.total),
     shipments: shipments.length,
     inTransit: shipments.filter((s) => s.status === "در مسیر").length,
+    atCarrier: shipments.filter((s) => s.status === "تحویل به کارگو").length,
     delivered: shipments.filter((s) => s.status === "تحویل‌شده").length,
     freight: shipments.reduce((s, x) => s + x.freight_cost, 0),
     overdue: invoices.filter((i) => i.payment_status === "سررسید گذشته").length,

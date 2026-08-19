@@ -45,11 +45,23 @@ export function GuideTour({
   const step = open && total > 0 ? steps[i] : null;
   const target = step?.href;
 
-  // قلب کار: رساندن کاربر به صفحه‌ای که گام درباره‌اش حرف می‌زند
+  /*
+   * قلب کار: رساندن کاربر به صفحه‌ای که گام درباره‌اش حرف می‌زند.
+   * فقط با عوض شدن گام جابه‌جا می‌کند، نه با عوض شدن مسیر —
+   * وگرنه اگر کاربر خودش جایی برود، راهنما او را به زور برمی‌گرداند.
+   */
+  const navigatedFor = useRef<number | null>(null);
   useEffect(() => {
-    if (!open || !target) return;
+    if (!open) {
+      navigatedFor.current = null;
+      return;
+    }
+    if (!target || navigatedFor.current === i) return;
+    navigatedFor.current = i;
     if (pathname !== target) router.push(target);
-  }, [open, target, pathname, router]);
+    // pathname عمداً در وابستگی‌ها نیست
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, i, target, router]);
 
   const finish = useCallback(
     (skipped: boolean) => {

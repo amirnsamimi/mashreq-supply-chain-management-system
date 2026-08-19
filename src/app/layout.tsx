@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { Vazirmatn } from "next/font/google";
 import { GeistMono } from "geist/font/mono";
 import "./globals.css";
+import { Suspense } from "react";
+import { GuideMount } from "@/components/GuideMount";
 
 // فونت فارسی روی سرور خودمان میزبانی می‌شود (بدون وابستگی به CDN)
 const vazirmatn = Vazirmatn({
@@ -44,7 +46,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
       </head>
-      <body className="min-h-screen">{children}</body>
+      <body className="min-h-screen">
+        {children}
+        {/* راهنمای گام‌به‌گام؛ بیرون از صفحه‌ها تا با تغییر مسیر بسته نشود */}
+        <Suspense fallback={null}>
+          <GuideMount />
+        </Suspense>
+      </body>
     </html>
   );
 }

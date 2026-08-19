@@ -4,9 +4,10 @@ import { useState } from "react";
 import type { Supplier } from "@/lib/queries";
 import { Button } from "@/components/geist";
 import { NewInvoiceButton } from "./InvoicesClient";
+import { useOpenParam } from "@/components/useOpenParam";
 
 export function NewInvoiceTrigger({ suppliers }: { suppliers: Supplier[] }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useOpenParam("invoice");
   return (
     <>
       <Button variant="primary" onClick={() => setOpen(true)}>

@@ -9,6 +9,7 @@ import { createSupplier, deleteSupplier, updateSupplier } from "@/lib/actions";
 import { ActionForm, Submit } from "@/components/ActionForm";
 import { Badge, Button, Card, DataTable, Input, Modal, Textarea } from "@/components/geist";
 import type { Column } from "@/components/geist/DataTable";
+import { useOpenParam } from "@/components/useOpenParam";
 
 export function SuppliersClient({ page }: { page: Paged<Supplier> }) {
   const suppliers = page.rows;
@@ -203,7 +204,7 @@ function EditSupplierModal({
 }
 
 export function NewSupplierTrigger() {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useOpenParam("supplier");
   return (
     <>
       <Button variant="primary" onClick={() => setOpen(true)}>

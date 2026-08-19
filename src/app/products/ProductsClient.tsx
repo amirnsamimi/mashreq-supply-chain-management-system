@@ -9,6 +9,7 @@ import { CURRENCIES, UNITS } from "@/lib/lists";
 import { ActionForm, Submit } from "@/components/ActionForm";
 import { Badge, Button, Card, DataTable, Input, Modal, Note, NumberInput, SelectField, Textarea } from "@/components/geist";
 import type { Column } from "@/components/geist/DataTable";
+import { useOpenParam } from "@/components/useOpenParam";
 
 export function ProductsClient({ page }: { page: Paged<Product> }) {
   const products = page.rows;
@@ -196,7 +197,7 @@ function EditProductModal({ product, onClose }: { product: Product | null; onClo
 }
 
 export function NewProductTrigger() {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useOpenParam("product");
   return (
     <>
       <Button variant="primary" onClick={() => setOpen(true)}>

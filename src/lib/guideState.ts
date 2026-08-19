@@ -81,3 +81,18 @@ export async function resetGuide(userId: number): Promise<void> {
       set last_step = 0, completed_at = null, skipped = false, updated_at = now()
   `;
 }
+
+/** یک فاکتور و یک پارت واقعی، تا راهنما بتواند صفحه‌های داخلی را هم نشان دهد */
+export async function guideSamples(): Promise<{
+  invoiceId: number | null;
+  shipmentId: number | null;
+}> {
+  const [inv, ship] = await Promise.all([
+    sql`select id from invoices order by id desc limit 1`,
+    sql`select id from shipments order by id desc limit 1`,
+  ]);
+  return {
+    invoiceId: inv.length ? Number(inv[0].id) : null,
+    shipmentId: ship.length ? Number(ship[0].id) : null,
+  };
+}

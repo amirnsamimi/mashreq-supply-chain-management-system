@@ -25,6 +25,7 @@ import {
   Textarea,
 } from "@/components/geist";
 import type { BadgeTone } from "@/components/geist/Feedback";
+import { useOpenParam } from "@/components/useOpenParam";
 
 const severityTone: Record<Severity, BadgeTone> = {
   info: "blue",
@@ -206,7 +207,7 @@ function RuleForm({
 }
 
 export function RulesClient({ rules }: { rules: Rule[] }) {
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useOpenParam("rule");
   const [editing, setEditing] = useState<Rule | null>(null);
 
   return (

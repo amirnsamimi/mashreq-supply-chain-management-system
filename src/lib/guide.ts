@@ -16,6 +16,8 @@ export type GuideStep = {
   pageLabel?: string;
   /** گام فقط برای کاربری که این دسترسی را دارد نمایش داده می‌شود */
   permission?: PermissionKey;
+  /** گام فقط وقتی معنا دارد که چنین رکوردی در سیستم باشد */
+  needs?: "invoice" | "shipment";
 };
 
 export const GUIDE_STEPS: GuideStep[] = [
@@ -70,6 +72,19 @@ export const GUIDE_STEPS: GuideStep[] = [
     permission: "suppliers",
   },
   {
+    key: "suppliers-new",
+    title: "ساخت تأمین‌کننده جدید",
+    body: [
+      "همین حالا فرم «تأمین‌کننده جدید» برایتان باز شد؛ همان چیزی است که با دکمه بالای صفحه باز می‌شود.",
+      "فقط «نام» اجباری است؛ بقیه فیلدها را هر وقت اطلاعاتش را داشتید کامل کنید.",
+      "نام تأمین‌کننده یکتاست، پس دقیق و یک‌دست بنویسید تا رکورد تکراری ساخته نشود.",
+      "برای ویرایش بعدی، روی همان سطر در جدول کلیک کنید.",
+    ],
+    href: "/suppliers?new=supplier",
+    pageLabel: "فرم تأمین‌کننده جدید",
+    permission: "suppliers",
+  },
+  {
     key: "products",
     title: "کالاها",
     body: [
@@ -79,6 +94,18 @@ export const GUIDE_STEPS: GuideStep[] = [
     ],
     href: "/products",
     pageLabel: "کالاها",
+    permission: "products",
+  },
+  {
+    key: "products-new",
+    title: "ساخت کالای جدید",
+    body: [
+      "فرم «کالای جدید» باز است: کد کالا (SKU) و نام اجباری‌اند.",
+      "«قیمت مرجع» را همراه ارز درست ثبت کنید؛ همین عدد بعداً در فاکتور پیشنهاد می‌شود.",
+      "واحد (کارتن، عدد، کیلوگرم و...) را بنویسید تا گزارش تعداد معنا داشته باشد.",
+    ],
+    href: "/products?new=product",
+    pageLabel: "فرم کالای جدید",
     permission: "products",
   },
   {
@@ -95,6 +122,33 @@ export const GUIDE_STEPS: GuideStep[] = [
     permission: "invoices",
   },
   {
+    key: "invoices-new",
+    title: "ساخت فاکتور جدید",
+    body: [
+      "فرم فاکتور جدید باز شد: شماره فاکتور، تأمین‌کننده، تاریخ، ارز، مبلغ کل و سررسید.",
+      "شماره فاکتور یکتاست و بعداً کلید پیدا کردن آن است.",
+      "«سررسید» را حتماً پر کنید؛ هشدارهای داشبورد و اعلان‌ها بر همین اساس ساخته می‌شوند.",
+    ],
+    href: "/invoices?new=invoice",
+    pageLabel: "فرم فاکتور جدید",
+    permission: "invoices",
+  },
+  {
+    key: "invoice-detail",
+    title: "داخل یک فاکتور",
+    body: [
+      "این صفحه یکی از فاکتورهای واقعی شماست تا ببینید داخل فاکتور چه خبر است.",
+      "بخش «اقلام»: کالا، تعداد و قیمت واحد را اینجا اضافه یا ویرایش می‌کنید.",
+      "بخش «پرداخت‌ها»: پرداخت‌های همین فاکتور و مانده حساب.",
+      "بخش «پارت‌های ارسال»: هر قلم به کدام پارت رفته و چقدرش تحویل شده است.",
+      "دکمه «اشتراک‌گذاری»: ساخت لینک عمومی فقط‌خواندنی برای تأمین‌کننده یا همکار.",
+    ],
+    href: "/invoices/{invoiceId}",
+    pageLabel: "جزئیات فاکتور",
+    permission: "invoices",
+    needs: "invoice",
+  },
+  {
     key: "shipments",
     title: "پارت‌های ارسال و تخصیص",
     body: [
@@ -106,6 +160,32 @@ export const GUIDE_STEPS: GuideStep[] = [
     href: "/shipments",
     pageLabel: "پارت‌های ارسال",
     permission: "shipments",
+  },
+  {
+    key: "shipments-new",
+    title: "ساخت پارت ارسال جدید",
+    body: [
+      "فرم پارت جدید باز است: شماره پارت، کارگو، نوع حمل و شماره پیگیری.",
+      "تاریخ‌ها را به‌ترتیب پر کنید: تحویل به کارگو، حرکت، و در نهایت دریافت.",
+      "«هزینه حمل» را همین‌جا ثبت کنید تا روی بهای تمام‌شده اقلام سرشکن شود.",
+    ],
+    href: "/shipments?new=shipment",
+    pageLabel: "فرم پارت جدید",
+    permission: "shipments",
+  },
+  {
+    key: "shipment-detail",
+    title: "داخل یک پارت ارسال",
+    body: [
+      "این یکی از پارت‌های واقعی شماست.",
+      "در «تخصیص اقلام»، اقلام فاکتورها را با تعداد ارسالی به این پارت وصل می‌کنید.",
+      "پس از رسیدن بار، «تعداد دریافتی» را وارد کنید تا کسری تحویل خودکار مشخص شود.",
+      "جدول بهای تمام‌شده نشان می‌دهد سهم هر قلم از هزینه حمل چقدر بوده است.",
+    ],
+    href: "/shipments/{shipmentId}",
+    pageLabel: "جزئیات پارت",
+    permission: "shipments",
+    needs: "shipment",
   },
   {
     key: "payments",
@@ -120,6 +200,18 @@ export const GUIDE_STEPS: GuideStep[] = [
     permission: "payments",
   },
   {
+    key: "payments-new",
+    title: "ثبت پرداخت جدید",
+    body: [
+      "فرم پرداخت باز است: اول فاکتور را انتخاب کنید تا مانده‌اش را ببینید.",
+      "مبلغ، تاریخ، روش پرداخت و شماره پیگیری را وارد کنید.",
+      "می‌توانید چند پرداخت جزئی برای یک فاکتور ثبت کنید؛ مانده خودکار کم می‌شود.",
+    ],
+    href: "/payments?new=payment",
+    pageLabel: "فرم پرداخت جدید",
+    permission: "payments",
+  },
+  {
     key: "notifications",
     title: "اعلان‌ها و قانون‌ها",
     body: [
@@ -129,6 +221,19 @@ export const GUIDE_STEPS: GuideStep[] = [
     ],
     href: "/notifications/rules",
     pageLabel: "قانون‌های اعلان",
+    permission: "notifications",
+  },
+  {
+    key: "notifications-new",
+    title: "ساخت قانون اعلان",
+    body: [
+      "فرم قالب اعلان باز است: اول موضوع (فاکتور یا پارت ارسال) و بعد شرط را انتخاب کنید.",
+      "برای شرط‌های تاریخ‌محور «فاصله روز» را بدهید؛ مثلاً ۳ روز مانده به سررسید.",
+      "در متن عنوان و بدنه می‌توانید از جای‌نگه‌دارها مثل {شماره} استفاده کنید تا مقدار واقعی جایش بنشیند.",
+      "پیش‌نمایش پایین فرم نشان می‌دهد اعلان نهایی چطور دیده می‌شود.",
+    ],
+    href: "/notifications/rules?new=rule",
+    pageLabel: "فرم قانون اعلان",
     permission: "notifications",
   },
   {
@@ -190,7 +295,30 @@ export const GUIDE_STEPS: GuideStep[] = [
   },
 ];
 
-/** فقط گام‌هایی که کاربر به بخش‌شان دسترسی دارد */
-export function stepsFor(permissions: PermissionKey[]): GuideStep[] {
-  return GUIDE_STEPS.filter((s) => !s.permission || permissions.includes(s.permission));
+/** یک نمونه واقعی از دیتابیس تا راهنما بتواند صفحه‌های داخلی را هم نشان دهد */
+export type GuideSamples = { invoiceId?: number | null; shipmentId?: number | null };
+
+/**
+ * گام‌های قابل نمایش برای این کاربر:
+ * گام‌هایی که دسترسی‌شان را ندارد و گام‌هایی که نمونه‌ای برایشان نیست حذف می‌شوند.
+ */
+export function stepsFor(
+  permissions: PermissionKey[],
+  samples: GuideSamples = {}
+): GuideStep[] {
+  return GUIDE_STEPS.filter(
+    (s) => !s.permission || permissions.includes(s.permission)
+  )
+    .filter((s) => {
+      if (s.needs === "invoice") return Boolean(samples.invoiceId);
+      if (s.needs === "shipment") return Boolean(samples.shipmentId);
+      return true;
+    })
+    .map((s) => {
+      if (!s.href) return s;
+      const href = s.href
+        .replace("{invoiceId}", String(samples.invoiceId ?? ""))
+        .replace("{shipmentId}", String(samples.shipmentId ?? ""));
+      return href === s.href ? s : { ...s, href };
+    });
 }

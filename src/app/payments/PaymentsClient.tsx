@@ -24,6 +24,7 @@ import {
 import type { Column } from "@/components/geist/DataTable";
 import { statusTone } from "@/lib/tones";
 import { DateText } from "@/components/DateText";
+import { useOpenParam } from "@/components/useOpenParam";
 
 export function PaymentsClient({
   page,
@@ -204,7 +205,7 @@ export function NewPaymentModal({
 }
 
 export function NewPaymentTrigger({ invoices }: { invoices: Invoice[] }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useOpenParam("payment");
   return (
     <>
       <Button variant="primary" onClick={() => setOpen(true)}>

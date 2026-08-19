@@ -1,6 +1,6 @@
 import { requireAuth } from "@/lib/auth";
 import { stepsFor } from "@/lib/guide";
-import { guideState } from "@/lib/guideState";
+import { guideSamples, guideState } from "@/lib/guideState";
 import { guideResetAction } from "@/lib/actions";
 import { Page } from "@/components/Nav";
 import { GuideStartButton } from "@/components/GuideLauncher";
@@ -12,7 +12,8 @@ export const dynamic = "force-dynamic";
 export default async function GuidePage() {
   // راهنما به دسترسی خاصی نیاز ندارد؛ هر کاربر واردشده می‌تواند ببیندش
   const me = await requireAuth();
-  const steps = stepsFor(me.permissions);
+  const samples = await guideSamples();
+  const steps = stepsFor(me.permissions, samples);
   const state = await guideState(me.id);
   const resume = Math.min(state.last_step, Math.max(steps.length - 1, 0));
   const done = state.completed_at !== null && !state.skipped;
@@ -25,7 +26,6 @@ export default async function GuidePage() {
       permissions={me.permissions}
       action={
         <GuideStartButton
-          steps={steps}
           startAt={resume}
           label={state.last_step > 0 && !done ? "ادامه راهنما" : "شروع راهنمای گام‌به‌گام"}
         />
@@ -37,7 +37,7 @@ export default async function GuidePage() {
             ? "شما راهنما را تا انتها دیده‌اید. هر زمان خواستید دوباره اجرایش کنید."
             : state.skipped
               ? "راهنما را قبلاً بسته‌اید. با دکمه بالا می‌توانید دوباره از همان‌جا ادامه دهید."
-              : "این راهنما در چند گام کوتاه، کار با هر بخش سامانه را توضیح می‌دهد."}
+              : "این راهنما در چند گام کوتاه، کار با هر بخش سامانه را توضیح می‌دهد و با هر گام خودش شما را به همان صفحه می‌برد."}
         </Note>
       </div>
 
@@ -59,7 +59,10 @@ export default async function GuidePage() {
         />
       </div>
 
-      <Card title="فهرست گام‌ها">
+      <Card
+        title="فهرست گام‌ها"
+        footer="گام‌ها بر اساس دسترسی‌های شما فیلتر شده‌اند؛ هر کاربر فقط راهنمای بخش‌هایی را می‌بیند که به آن‌ها دسترسی دارد."
+      >
         <ol className="divide-y divide-[var(--geist-border)]">
           {steps.map((s, k) => (
             <li key={s.key} className="flex gap-3 px-4 py-4">
@@ -67,7 +70,10 @@ export default async function GuidePage() {
                 {k + 1}
               </span>
               <div className="min-w-0">
-                <h3 className="text-sm font-medium">{s.title}</h3>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-sm font-medium">{s.title}</h3>
+                  {s.pageLabel && <Badge tone="gray">{s.pageLabel}</Badge>}
+                </div>
                 <ul className="mt-1.5 space-y-1">
                   {s.body.map((line, j) => (
                     <li key={j} className="text-sm leading-7 text-[var(--geist-secondary)]">

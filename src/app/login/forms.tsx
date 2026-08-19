@@ -15,7 +15,8 @@ export function LoginForm() {
   const [error, action, pending] = useActionState(loginAction, null);
   return (
     <form action={action}>
-      <h1 className="mb-1 text-lg font-semibold tracking-tight">پیگیری فاکتور و ارسال</h1>
+      <h1 className="text-lg font-semibold tracking-tight">اپلیکیشن مشرقی</h1>
+      <p className="mb-1 text-xs text-[var(--geist-tertiary)]">نرم‌افزار مدیریت و پیگیری زنجیره تأمین</p>
       <p className="mb-5 text-sm text-[var(--geist-secondary)]">
         با شماره موبایل و رمز عبور خود وارد شوید.
       </p>

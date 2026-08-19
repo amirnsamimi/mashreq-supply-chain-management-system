@@ -3,9 +3,9 @@ import type { MetadataRoute } from "next";
 /** مانیفست وب‌اپ؛ Next آن را روی /manifest.webmanifest سرو می‌کند */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "پیگیری فاکتور و ارسال چندپارتی",
+    name: "اپلیکیشن مشرقی",
     short_name: "مشرقی",
-    description: "مدیریت فاکتورها، اقلام، پارت‌های ارسال و تسویه",
+    description: "نرم‌افزار مدیریت و پیگیری زنجیره تأمین",
     lang: "fa",
     dir: "rtl",
     start_url: "/",

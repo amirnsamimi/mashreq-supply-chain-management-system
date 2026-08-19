@@ -4,6 +4,7 @@ import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 import { Suspense } from "react";
 import { GuideMount } from "@/components/GuideMount";
+import { Footer } from "@/components/Footer";
 import { OfflineBanner, ServiceWorkerRegistrar } from "@/components/PWA";
 
 // فونت فارسی روی سرور خودمان میزبانی می‌شود (بدون وابستگی به CDN)
@@ -14,9 +15,9 @@ const vazirmatn = Vazirmatn({
 });
 
 export const metadata: Metadata = {
-  title: "پیگیری فاکتور و ارسال چندپارتی",
-  description: "مدیریت فاکتورها، اقلام، پارت‌های ارسال و تسویه",
-  applicationName: "مشرقی",
+  title: "اپلیکیشن مشرقی",
+  description: "نرم‌افزار مدیریت و پیگیری زنجیره تأمین",
+  applicationName: "اپلیکیشن مشرقی",
   appleWebApp: {
     capable: true,
     title: "مشرقی",
@@ -67,9 +68,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
       </head>
-      <body className="min-h-screen">
+      <body className="flex min-h-screen flex-col">
         <OfflineBanner />
-        {children}
+        <div className="flex-1">{children}</div>
+        <Footer />
         <ServiceWorkerRegistrar />
         {/* راهنمای گام‌به‌گام؛ بیرون از صفحه‌ها تا با تغییر مسیر بسته نشود */}
         <Suspense fallback={null}>

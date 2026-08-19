@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 
+import { todayJalali } from "@/lib/jalali";
+
 type Calendar = "jalali" | "gregorian";
 const KEY = "khanum-calendar";
 
@@ -9,6 +11,12 @@ const KEY = "khanum-calendar";
 export function CalendarToggle() {
   const [cal, setCal] = useState<Calendar>("jalali");
   const [ready, setReady] = useState(false);
+  // سال جاری هر دو تقویم، تا برچسب دکمه با گذشت سال کهنه نشود
+  const [years, setYears] = useState<{ jalali: number; gregorian: number } | null>(null);
+
+  useEffect(() => {
+    setYears({ jalali: todayJalali().jy, gregorian: new Date().getFullYear() });
+  }, []);
 
   useEffect(() => {
     const saved = localStorage.getItem(KEY);
@@ -30,7 +38,7 @@ export function CalendarToggle() {
       aria-label="تغییر تقویم نمایش"
       className="num rounded-full border border-[var(--geist-border)] px-2 py-1 text-[0.65rem] leading-none text-[var(--geist-secondary)] transition hover:border-[var(--geist-foreground)] hover:text-[var(--geist-foreground)]"
     >
-      {ready ? (cal === "jalali" ? "1404" : "2025") : "1404"}
+      {ready && years ? (cal === "jalali" ? years.jalali : years.gregorian) : "\u00a0\u00a0\u00a0\u00a0"}
     </button>
   );
 }

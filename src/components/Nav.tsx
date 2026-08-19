@@ -33,9 +33,12 @@ export async function Nav({
       <NavHeight />
       <div className="mx-auto max-w-[1400px] px-4 sm:px-5">
         <div className="flex items-center gap-3 py-2.5">
-          <span className="truncate text-sm font-semibold tracking-tight">
-            پیگیری فاکتور و ارسال
-          </span>
+          <div className="flex min-w-0 flex-col">
+            <span className="truncate text-sm font-semibold tracking-tight">اپلیکیشن مشرقی</span>
+            <span className="hidden truncate text-[0.7rem] leading-4 text-[var(--geist-tertiary)] sm:inline">
+              نرم‌افزار مدیریت و پیگیری زنجیره تأمین
+            </span>
+          </div>
           <div className="mr-auto flex shrink-0 items-center gap-2 sm:gap-3">
             {user && (
               <span className="hidden text-xs text-[var(--geist-secondary)] sm:inline">{user}</span>

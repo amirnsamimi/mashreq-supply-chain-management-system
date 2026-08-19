@@ -114,3 +114,52 @@ self.addEventListener("fetch", (event) => {
     );
   }
 });
+
+/* ---------- وب‌پوش ---------- */
+
+// پیام پوش از سرور می‌رسد؛ روی iOS فقط در حالت نصب‌شده کار می‌کند
+self.addEventListener("push", (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = { title: "اعلان تازه", body: event.data ? event.data.text() : "" };
+  }
+
+  const title = data.title || "اپلیکیشن مشرقی";
+  const options = {
+    body: data.body || "",
+    icon: "/icons/icon-192.png",
+    badge: "/icons/icon-192.png",
+    dir: "rtl",
+    lang: "fa",
+    // اعلان‌های هم‌تگ جای هم را می‌گیرند تا صفحه قفل شلوغ نشود
+    tag: data.tag || "khanum-notification",
+    data: { url: data.url || "/notifications" },
+    // اعلان بحرانی تا لمس‌شدن روی صفحه می‌ماند
+    requireInteraction: data.severity === "critical",
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+// با کلیک، اگر پنجره‌ای از برنامه باز است همان را جلو بیاور
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = new URL(
+    (event.notification.data && event.notification.data.url) || "/notifications",
+    self.location.origin
+  );
+
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+      for (const client of list) {
+        if (new URL(client.url).origin === target.origin && "focus" in client) {
+          client.navigate(target.href);
+          return client.focus();
+        }
+      }
+      return self.clients.openWindow(target.href);
+    })
+  );
+});

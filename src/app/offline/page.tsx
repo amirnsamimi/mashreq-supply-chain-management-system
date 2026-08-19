@@ -5,7 +5,7 @@ export const metadata: Metadata = { title: "آفلاین" };
 /** جایگزینِ سرویس‌ورکر وقتی صفحه‌ای بدون شبکه باز شود. باید کاملاً ایستا بماند. */
 export default function OfflinePage() {
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-4 px-6 text-center">
+    <main className="mx-auto flex min-h-[80vh] max-w-md flex-col items-center justify-center gap-4 px-6 text-center">
       <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--geist-gray-100)] text-[var(--geist-secondary)]">
         <svg
           viewBox="0 0 24 24"

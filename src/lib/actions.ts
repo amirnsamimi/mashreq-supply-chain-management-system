@@ -26,6 +26,13 @@ import {
   type PermissionKey,
 } from "./permissions";
 import { runRules, TRIGGERS } from "./notifications";
+import {
+  hasSubscription,
+  pushEnabled,
+  removeSubscription,
+  saveSubscription,
+  sendToAll,
+} from "./push";
 import { activeShare, newToken } from "./share";
 import {
   finishGuide,
@@ -972,4 +979,47 @@ export async function guideResetAction(): Promise<FormResult> {
   await resetGuide(me.id);
   revalidatePath("/guide");
   return ok("راهنما بازنشانی شد؛ از گام اول شروع می‌شود");
+}
+
+/* ---------- وب‌پوش ---------- */
+
+/** ثبت دستگاه فعلی برای دریافت اعلان روی گوشی */
+export async function subscribePushAction(
+  sub: { endpoint: string; keys: { p256dh: string; auth: string } },
+  userAgent?: string
+): Promise<FormResult> {
+  const me = await requireAuth();
+  if (!sub?.endpoint || !sub.keys?.p256dh || !sub.keys?.auth) {
+    return err("اطلاعات اشتراک ناقص است");
+  }
+  await saveSubscription(me.id, sub, userAgent);
+  return ok("از این پس اعلان‌ها روی این دستگاه فرستاده می‌شود");
+}
+
+/** لغو دریافت اعلان روی این دستگاه */
+export async function unsubscribePushAction(endpoint: string): Promise<FormResult> {
+  await requireAuth();
+  if (endpoint) await removeSubscription(endpoint);
+  return ok("دریافت اعلان روی این دستگاه خاموش شد");
+}
+
+/** آیا این دستگاه از قبل ثبت شده است؟ */
+export async function isPushSubscribedAction(endpoint: string): Promise<boolean> {
+  await requireAuth();
+  return endpoint ? hasSubscription(endpoint) : false;
+}
+
+/** ارسال یک اعلان آزمایشی به همه دستگاه‌های ثبت‌شده */
+export async function sendTestPushAction(): Promise<FormResult> {
+  const me = await requireAuth();
+  if (!pushEnabled()) return err("کلیدهای VAPID در محیط تعریف نشده‌اند");
+  const { sent } = await sendToAll({
+    title: "اعلان آزمایشی",
+    body: `سلام ${me.first_name}؛ اعلان‌ها درست کار می‌کنند.`,
+    url: "/notifications",
+    tag: "khanum-test",
+  });
+  return sent > 0
+    ? ok(`به ${sent} دستگاه فرستاده شد`)
+    : err("دستگاهی ثبت نشده است");
 }

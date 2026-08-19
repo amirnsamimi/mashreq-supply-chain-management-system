@@ -3,6 +3,7 @@ import { render, type NotifTarget, type Notification, type Rule, type Severity }
 import { listInvoices, listShipments } from "./queries";
 import { money, qty as fq, jalali } from "./format";
 import { daysSince, todayISO } from "./today";
+import { sendToAll } from "./push";
 
 export * from "./notification-types";
 
@@ -187,17 +188,26 @@ export async function runRules(): Promise<{ created: number; checked: number }> 
   }
 
   let created = 0;
+  // فقط اعلان‌های تازه پوش می‌شوند؛ dedupe جلوی ارسال تکراری را می‌گیرد
+  const fresh: { severity: Severity; title: string; body: string; target: NotifTarget; targetId: number }[] = [];
+
   for (const p of pending) {
+    const title = render(p.rule.title_template, p.vars);
+    const body = render(p.rule.body_template, p.vars);
     const [row] = await sql`
       insert into notifications (rule_id, rule_name, target, target_id, dedupe_key, severity, title, body)
       values (${p.rule.id}, ${p.rule.name}, ${p.rule.target}, ${p.targetId}, ${p.dedupe},
-              ${p.rule.severity}, ${render(p.rule.title_template, p.vars)},
-              ${render(p.rule.body_template, p.vars)})
+              ${p.rule.severity}, ${title}, ${body})
       on conflict (dedupe_key) do nothing
       returning id
     `;
-    if (row) created++;
+    if (row) {
+      created++;
+      fresh.push({ severity: p.rule.severity, title, body, target: p.rule.target, targetId: p.targetId });
+    }
   }
+
+  await pushFresh(fresh);
 
   await sql`
     insert into app_state (key, value, updated_at) values ('notif_last_run', ${new Date().toISOString()}, now())
@@ -219,4 +229,43 @@ export async function runRulesThrottled(minMinutes = 10) {
 export async function lastRun(): Promise<string | null> {
   const [state] = await sql`select value from app_state where key = 'notif_last_run'`;
   return state?.value ? String(state.value) : null;
+}
+
+/* ---------- تحویل روی گوشی ---------- */
+
+type Fresh = { severity: Severity; title: string; body: string; target: NotifTarget; targetId: number };
+
+/**
+ * اعلان‌های تازه را به دستگاه‌های ثبت‌شده می‌فرستد.
+ * اگر تعدادشان زیاد باشد به‌جای چند اعلان، یک خلاصه فرستاده می‌شود تا
+ * صفحه قفل گوشی پر نشود. خطای پوش نباید جلوی ساخت اعلان را بگیرد.
+ */
+async function pushFresh(fresh: Fresh[]) {
+  if (fresh.length === 0) return;
+  try {
+    if (fresh.length > 3) {
+      const critical = fresh.filter((f) => f.severity === "critical").length;
+      await sendToAll({
+        title: "اعلان‌های تازه",
+        body: critical > 0
+          ? `${fresh.length} اعلان تازه دارید (${critical} مورد بحرانی)`
+          : `${fresh.length} اعلان تازه دارید`,
+        severity: critical > 0 ? "critical" : "warning",
+        url: "/notifications",
+        tag: "khanum-digest",
+      });
+      return;
+    }
+    for (const f of fresh) {
+      await sendToAll({
+        title: f.title,
+        body: f.body,
+        severity: f.severity,
+        url: f.target === "invoice" ? `/invoices/${f.targetId}` : `/shipments/${f.targetId}`,
+        tag: `khanum-${f.target}-${f.targetId}`,
+      });
+    }
+  } catch {
+    // تحویل پوش بهترین‌تلاش است؛ اعلان در برنامه به‌هرحال ساخته شده
+  }
 }

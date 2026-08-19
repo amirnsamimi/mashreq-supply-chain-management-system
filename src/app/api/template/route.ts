@@ -121,7 +121,7 @@ export async function GET() {
   if (!user) return new Response("unauthorized", { status: 401 });
 
   const wb = new ExcelJS.Workbook();
-  wb.creator = "پیگیری فاکتور و ارسال";
+  wb.creator = "اپلیکیشن مشرقی";
   wb.views = [{ x: 0, y: 0, width: 10000, height: 20000, firstSheet: 0, activeTab: 0, visibility: "visible" }];
 
   const guide = wb.addWorksheet("راهنما", { views: [{ rightToLeft: true }] });

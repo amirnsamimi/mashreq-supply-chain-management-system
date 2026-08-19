@@ -13,8 +13,20 @@ import type { Severity } from "./notification-types";
 
 const PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
 const PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY ?? "";
-// mailto یا آدرس سایت؛ سرویس‌های پوش برای تماس در زمان مشکل می‌خواهندش
-const SUBJECT = process.env.VAPID_SUBJECT || "mailto:admin@example.com";
+/**
+ * web-push فقط mailto: یا http(s):// را می‌پذیرد و برای هر چیز دیگر
+ * استثنا می‌اندازد. ایمیل خالی (بدون mailto:) اشتباه رایجی است، پس
+ * خودمان درستش می‌کنیم تا یک متغیر محیطیِ بدشکل صفحه را از کار نیندازد.
+ */
+function normalizeSubject(raw: string | undefined): string {
+  const value = (raw ?? "").trim();
+  if (!value) return "mailto:admin@example.com";
+  if (/^(mailto:|https?:\/\/)/i.test(value)) return value;
+  if (value.includes("@")) return `mailto:${value}`;
+  return `https://${value}`;
+}
+
+const SUBJECT = normalizeSubject(process.env.VAPID_SUBJECT);
 
 /**
  * true یعنی کلیدها هست و می‌شود پوش فرستاد.
@@ -36,8 +48,14 @@ async function loadWebPush() {
   const mod = await import("web-push");
   const webpush = mod.default ?? mod;
   if (!configured) {
-    webpush.setVapidDetails(SUBJECT, PUBLIC_KEY, PRIVATE_KEY);
-    configured = true;
+    try {
+      webpush.setVapidDetails(SUBJECT, PUBLIC_KEY, PRIVATE_KEY);
+      configured = true;
+    } catch (err) {
+      // کلید یا subject نامعتبر: پوش خاموش می‌ماند ولی برنامه سرِ پا می‌ماند
+      console.error("VAPID پیکربندی نشد:", (err as Error).message);
+      return null;
+    }
   }
   return webpush;
 }
@@ -95,6 +113,7 @@ export async function sendToAll(payload: PushPayload): Promise<{ sent: number; r
   if (rows.length === 0) return { sent: 0, removed: 0 };
 
   const webpush = await loadWebPush();
+  if (!webpush) return { sent: 0, removed: 0 };
 
   const body = JSON.stringify(payload);
   let sent = 0;

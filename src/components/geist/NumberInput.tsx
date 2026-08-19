@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { controlBase, controlBorder, Label } from "./Input";
 
 const faDigits = /[۰-۹٠-٩]/g;
 const faMap: Record<string, string> = {
@@ -39,12 +40,14 @@ function trimZeros(v: string): string {
  * مقدار خام (بدون کاما) در یک input مخفی با نام واقعی ارسال می‌شود.
  */
 export function NumberInput({
+  label,
   name,
   defaultValue,
   placeholder,
   className = "",
   title,
 }: {
+  label?: string;
   name: string;
   defaultValue?: string | number | null;
   placeholder?: string;
@@ -59,7 +62,8 @@ export function NumberInput({
   const raw = normalize(display);
 
   return (
-    <>
+    <div className="w-full">
+      {label && <Label>{label}</Label>}
       <input
         type="text"
         inputMode="decimal"
@@ -68,9 +72,9 @@ export function NumberInput({
         placeholder={placeholder}
         value={display}
         onChange={(e) => setDisplay(group(normalize(e.target.value)))}
-        className={`num text-left ${className}`}
+        className={`num ${controlBase} ${controlBorder(false)} h-10 px-3 text-left ${className}`}
       />
       <input type="hidden" name={name} value={raw} />
-    </>
+    </div>
   );
 }

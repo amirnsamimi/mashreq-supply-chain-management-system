@@ -350,3 +350,80 @@ export async function dashboard() {
     openInvoices: invoices.filter((i) => i.invoice_status === "باز").length,
   };
 }
+
+/* ---------- کالاها ---------- */
+
+export type Product = {
+  id: number;
+  sku: string;
+  name: string;
+  category: string | null;
+  unit: string | null;
+  last_price: number | null;
+  notes: string | null;
+  is_active: boolean;
+  invoice_count: number;
+  total_qty: number;
+};
+
+export async function listProducts(): Promise<Product[]> {
+  const rows = await sql`
+    select p.*,
+      coalesce(u.invoice_count, 0) as invoice_count,
+      coalesce(u.total_qty, 0)     as total_qty
+    from products p
+    left join lateral (
+      select count(distinct ii.invoice_id) as invoice_count, sum(ii.qty) as total_qty
+      from invoice_items ii where ii.product_id = p.id
+    ) u on true
+    order by p.sku
+  `;
+  return rows.map((r) => ({
+    id: Number(r.id),
+    sku: String(r.sku),
+    name: String(r.name),
+    category: (r.category as string | null) ?? null,
+    unit: (r.unit as string | null) ?? null,
+    last_price: r.last_price === null ? null : num(r.last_price),
+    notes: (r.notes as string | null) ?? null,
+    is_active: Boolean(r.is_active),
+    invoice_count: num(r.invoice_count),
+    total_qty: num(r.total_qty),
+  }));
+}
+
+/* ---------- پرداخت‌ها (همه فاکتورها) ---------- */
+
+export type PaymentRow = {
+  id: number;
+  invoice_id: number;
+  invoice_no: string;
+  supplier: string | null;
+  currency: string | null;
+  payment_date: string | null;
+  amount: number;
+  method: string | null;
+  reference: string | null;
+  notes: string | null;
+};
+
+export async function listAllPayments(): Promise<PaymentRow[]> {
+  const rows = await sql`
+    select p.*, i.invoice_no, i.supplier, i.currency
+    from payments p
+    join invoices i on i.id = p.invoice_id
+    order by p.payment_date desc nulls last, p.id desc
+  `;
+  return rows.map((r) => ({
+    id: Number(r.id),
+    invoice_id: Number(r.invoice_id),
+    invoice_no: String(r.invoice_no),
+    supplier: (r.supplier as string | null) ?? null,
+    currency: (r.currency as string | null) ?? null,
+    payment_date: d(r.payment_date),
+    amount: num(r.amount),
+    method: (r.method as string | null) ?? null,
+    reference: (r.reference as string | null) ?? null,
+    notes: (r.notes as string | null) ?? null,
+  }));
+}

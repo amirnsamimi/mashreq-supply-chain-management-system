@@ -116,71 +116,73 @@ body {
 
 ::selection { background: var(--geist-blue); color: #fff; }
 
-/* ---------- فرم ---------- */
-input, select, textarea {
-  width: 100%;
-  font-size: 16px;
-  border-radius: var(--geist-radius);
-  border: 1px solid var(--geist-border);
-  background: var(--geist-background);
-  color: var(--geist-foreground);
-  padding: 0.5rem 0.625rem;
-  line-height: 1.25rem;
-  outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-input::placeholder, textarea::placeholder { color: var(--geist-tertiary); }
-@media (min-width: 640px) {
-  input, select, textarea { font-size: 0.875rem; }
-}
-input:hover, select:hover, textarea:hover { border-color: var(--geist-border-strong); }
-input:focus, select:focus, textarea:focus {
-  border-color: var(--geist-foreground);
-  box-shadow: 0 0 0 3px var(--geist-gray-alpha);
-}
-select {
-  appearance: none;
-  background-image: linear-gradient(45deg, transparent 50%, var(--geist-secondary) 50%),
-                    linear-gradient(135deg, var(--geist-secondary) 50%, transparent 50%);
-  background-position: calc(0% + 12px) 50%, calc(0% + 17px) 50%;
-  background-size: 5px 5px, 5px 5px;
-  background-repeat: no-repeat;
-  padding-left: 2rem;
-}
-label {
-  display: block;
-  font-size: 0.75rem;
-  font-weight: 500;
-  color: var(--geist-secondary);
-  margin-bottom: 0.375rem;
-}
+@layer base {
+  /* ---------- فرم ---------- */
+  input, select, textarea {
+    width: 100%;
+    font-size: 16px;
+    border-radius: var(--geist-radius);
+    border: 1px solid var(--geist-border);
+    background: var(--geist-background);
+    color: var(--geist-foreground);
+    padding: 0.5rem 0.75rem;
+    line-height: 1.25rem;
+    outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  input::placeholder, textarea::placeholder { color: var(--geist-tertiary); }
+  @media (min-width: 640px) {
+    input, select, textarea { font-size: 0.875rem; }
+  }
+  input:hover, select:hover, textarea:hover { border-color: var(--geist-border-strong); }
+  input:focus, select:focus, textarea:focus {
+    border-color: var(--geist-foreground);
+    box-shadow: 0 0 0 3px var(--geist-gray-alpha);
+  }
+  select {
+    appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, var(--geist-secondary) 50%),
+                      linear-gradient(135deg, var(--geist-secondary) 50%, transparent 50%);
+    background-position: calc(0% + 12px) 50%, calc(0% + 17px) 50%;
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+    padding-left: 2rem;
+  }
+  label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--geist-secondary);
+    margin-bottom: 0.375rem;
+  }
 
-/* ---------- جدول ---------- */
-table { width: 100%; font-size: 0.8125rem; border-collapse: collapse; }
-thead th {
-  background: var(--geist-background-subtle);
-  padding: 0.625rem 0.75rem;
-  text-align: right;
-  font-size: 0.75rem;
-  font-weight: 500;
-  color: var(--geist-secondary);
-  white-space: nowrap;
-  border-bottom: 1px solid var(--geist-border);
-}
-tbody td {
-  padding: 0.625rem 0.75rem;
-  border-bottom: 1px solid var(--geist-border);
-  white-space: nowrap;
-  vertical-align: middle;
-}
-tbody tr:last-child td { border-bottom: none; }
-tbody tr:hover { background: var(--geist-background-subtle); }
-tfoot td {
-  padding: 0.625rem 0.75rem;
-  border-top: 1px solid var(--geist-border);
-  background: var(--geist-background-subtle);
-  font-weight: 600;
-  white-space: nowrap;
+  /* ---------- جدول ---------- */
+  table { width: 100%; font-size: 0.8125rem; border-collapse: collapse; }
+  thead th {
+    background: var(--geist-background-subtle);
+    padding: 0.625rem 0.75rem;
+    text-align: right;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--geist-secondary);
+    white-space: nowrap;
+    border-bottom: 1px solid var(--geist-border);
+  }
+  tbody td {
+    padding: 0.625rem 0.75rem;
+    border-bottom: 1px solid var(--geist-border);
+    white-space: nowrap;
+    vertical-align: middle;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: var(--geist-background-subtle); }
+  tfoot td {
+    padding: 0.625rem 0.75rem;
+    border-top: 1px solid var(--geist-border);
+    background: var(--geist-background-subtle);
+    font-weight: 600;
+    white-space: nowrap;
+  }
 }
 
 /* اعداد با فونت مونو و عرض ثابت */
@@ -196,4 +198,19 @@ tfoot td {
 .scroll-x::-webkit-scrollbar-thumb {
   background: var(--geist-border-strong);
   border-radius: 4px;
+}
+
+@keyframes geist-spinner {
+  0% { opacity: 1; }
+  100% { opacity: 0.15; }
+}
+
+@keyframes geist-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes geist-shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
 }

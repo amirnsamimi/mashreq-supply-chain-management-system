@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { NumberInput } from "./NumberInput";
-import { Combobox } from "./Combobox";
+import { NumberInput } from "./geist/NumberInput";
+import { SubmitButton } from "./geist/Button";
+import { Combobox } from "./geist/Combobox";
 
 export type PickerItem = {
   id: number;
@@ -28,12 +29,12 @@ export function AllocationPicker({ items }: { items: PickerItem[] }) {
   return (
     <div className="grid gap-3 md:grid-cols-4">
       <div>
-        <label>فاکتور</label>
         <Combobox
+          label="فاکتور"
           placeholder="جست‌وجو و انتخاب فاکتور…"
           options={invoices.map((no) => ({ value: no, label: no }))}
           value={invoice}
-          onChange={(v) => {
+          onChange={(v: string) => {
             setInvoice(v);
             setItemId("");
           }}
@@ -41,8 +42,8 @@ export function AllocationPicker({ items }: { items: PickerItem[] }) {
       </div>
 
       <div>
-        <label>کالا</label>
         <Combobox
+          label="کالا"
           name="item_id"
           disabled={!invoice}
           placeholder={invoice ? "جست‌وجو و انتخاب کالا…" : "اول فاکتور را انتخاب کنید"}
@@ -58,17 +59,13 @@ export function AllocationPicker({ items }: { items: PickerItem[] }) {
       </div>
 
       <div>
-        <label>تعداد ارسال در این پارت</label>
-        <NumberInput key={itemId} name="qty_shipped" defaultValue={selected?.remaining ?? 0} />
+        <NumberInput label="تعداد ارسال در این پارت" key={itemId} name="qty_shipped" defaultValue={selected?.remaining ?? 0} />
       </div>
 
       <div className="flex items-end">
-        <button
-          disabled={!itemId}
-          className="inline-flex w-full items-center justify-center rounded-[var(--geist-radius)] bg-[var(--geist-foreground)] px-3.5 py-2 text-sm font-medium text-[var(--geist-background)] transition hover:opacity-85 disabled:opacity-40"
-        >
+        <SubmitButton variant="primary" block disabled={!itemId}>
           افزودن کالا به پارت
-        </button>
+        </SubmitButton>
       </div>
 
       {selected && (

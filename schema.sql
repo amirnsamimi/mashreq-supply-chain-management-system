@@ -70,3 +70,32 @@ create table if not exists users (
   is_active     boolean not null default true,
   created_at    timestamptz default now()
 );
+
+-- تاریخچه تغییرات (چه کسی، چه زمانی، چه کاری)
+create table if not exists audit_log (
+  id         bigserial primary key,
+  user_id    integer references users(id) on delete set null,
+  user_name  text not null,
+  action     text not null,
+  entity     text not null,
+  entity_id  integer,
+  summary    text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_audit_created on audit_log(created_at desc);
+create index if not exists idx_audit_entity on audit_log(entity, entity_id);
+
+-- کالاها (تعریف یک‌بار، استفاده در همه فاکتورها)
+create table if not exists products (
+  id          serial primary key,
+  sku         text not null unique,
+  name        text not null,
+  category    text,
+  unit        text,
+  last_price  numeric(18,4),
+  notes       text,
+  is_active   boolean not null default true,
+  created_at  timestamptz default now()
+);
+alter table invoice_items add column if not exists product_id integer references products(id) on delete set null;
+create index if not exists idx_items_product on invoice_items(product_id);

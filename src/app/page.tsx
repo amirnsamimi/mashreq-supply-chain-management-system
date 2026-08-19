@@ -2,7 +2,9 @@ import Link from "next/link";
 import { requireAuth } from "@/lib/auth";
 import { dashboard, listInvoices, listShipments } from "@/lib/queries";
 import { money, jalali } from "@/lib/format";
-import { Page, Stat, Card, Badge, Empty } from "@/components/ui";
+import { Page } from "@/components/Nav";
+import { Badge, Card, Empty, Stat } from "@/components/geist";
+import { statusTone } from "@/lib/tones";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +35,7 @@ export default async function Home() {
       <div className="mt-4">
         <Card title="مبالغ به تفکیک ارز">
           {d.currencies.length === 0 ? (
-            <Empty>هنوز فاکتوری ثبت نشده است</Empty>
+            <Empty title="هنوز فاکتوری ثبت نشده است" />
           ) : (
             <table>
               <thead>
@@ -72,7 +74,7 @@ export default async function Home() {
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <Card title="نیازمند بررسی">
           {attention.length === 0 ? (
-            <Empty>موردی نیست</Empty>
+            <Empty title="موردی نیست" />
           ) : (
             <div className="scroll-x">
               <table>
@@ -105,7 +107,7 @@ export default async function Home() {
                         {money(i.diff)}
                       </td>
                       <td>
-                        <Badge>{i.payment_status}</Badge>
+                        <Badge tone={statusTone(i.payment_status)}>{i.payment_status}</Badge>
                       </td>
                     </tr>
                   ))}
@@ -117,7 +119,7 @@ export default async function Home() {
 
         <Card title="پارت‌های در جریان">
           {activeShipments.length === 0 ? (
-            <Empty>موردی نیست</Empty>
+            <Empty title="موردی نیست" />
           ) : (
             <div className="scroll-x">
               <table>
@@ -142,7 +144,7 @@ export default async function Home() {
                       <td>{s.carrier ?? "—"}</td>
                       <td>{jalali(s.handover_date)}</td>
                       <td>
-                        <Badge>{s.status}</Badge>
+                        <Badge tone={statusTone(s.status)}>{s.status}</Badge>
                       </td>
                     </tr>
                   ))}

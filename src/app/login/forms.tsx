@@ -6,7 +6,7 @@ import { loginAction, setupAction } from "@/lib/actions";
 const btn =
   "mt-4 w-full rounded-[var(--geist-radius)] bg-[var(--geist-foreground)] py-2.5 text-sm font-medium text-[var(--geist-background)] transition hover:opacity-85 disabled:opacity-50";
 
-function Error({ children }: { children: string | null }) {
+function Error({ children }: { children?: string }) {
   if (!children) return null;
   return <p className="mt-3 text-sm text-[var(--geist-red-text)]">{children}</p>;
 }
@@ -29,7 +29,7 @@ export function LoginForm() {
           <input name="password" type="password" required />
         </div>
       </div>
-      <Error>{error}</Error>
+      <Error>{error?.error}</Error>
       <button disabled={pending} className={btn}>
         {pending ? "…" : "ورود"}
       </button>
@@ -65,7 +65,7 @@ export function SetupForm() {
           <input name="password" type="password" minLength={6} required />
         </div>
       </div>
-      <Error>{error}</Error>
+      <Error>{error?.error}</Error>
       <button disabled={pending} className={btn}>
         {pending ? "…" : "ساخت کاربر و ورود"}
       </button>

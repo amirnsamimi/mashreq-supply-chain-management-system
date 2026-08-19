@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { sql } from "./db";
+import { logAudit } from "./audit";
 import {
   hashPassword,
   hasUsers,
@@ -12,6 +13,10 @@ import {
   startSession,
   verifyPassword,
 } from "./auth";
+import { money } from "./format";
+
+/** نتیجهٔ یکنواخت فرم‌ها: پیام خطا یا موفقیت */
+export type FormResult = { error?: string; ok?: string } | null;
 
 function s(fd: FormData, k: string): string | null {
   const v = fd.get(k);
@@ -19,6 +24,7 @@ function s(fd: FormData, k: string): string | null {
   const t = v.trim();
   return t === "" ? null : t;
 }
+
 function n(fd: FormData, k: string): number | null {
   const v = s(fd, k);
   if (v === null) return null;
@@ -26,35 +32,37 @@ function n(fd: FormData, k: string): number | null {
   return Number.isFinite(x) ? x : null;
 }
 
-/* ---------- ورود و کاربران ---------- */
+const err = (m: string): FormResult => ({ error: m });
+const ok = (m: string): FormResult => ({ ok: m });
 
-export async function loginAction(_prev: string | null, fd: FormData) {
+/* ================= ورود و کاربران ================= */
+
+export async function loginAction(_prev: FormResult, fd: FormData): Promise<FormResult> {
   const phone = normalizePhone(String(fd.get("phone") ?? ""));
   const password = String(fd.get("password") ?? "");
-  if (!phone || !password) return "شماره موبایل و رمز عبور را وارد کنید";
+  if (!phone || !password) return err("شماره موبایل و رمز عبور را وارد کنید");
 
   const rows = await sql`select id, password_hash, is_active from users where phone = ${phone}`;
   const user = rows[0];
   // پیام یکسان تا مشخص نشود کدام شماره در سیستم هست
   if (!user || !verifyPassword(password, String(user.password_hash))) {
-    return "شماره موبایل یا رمز عبور نادرست است";
+    return err("شماره موبایل یا رمز عبور نادرست است");
   }
-  if (!user.is_active) return "حساب شما غیرفعال شده است";
+  if (!user.is_active) return err("حساب شما غیرفعال شده است");
 
   await startSession(Number(user.id));
   redirect("/");
 }
 
-/** ساخت اولین کاربر وقتی هیچ کاربری وجود ندارد */
-export async function setupAction(_prev: string | null, fd: FormData) {
-  if (await hasUsers()) return "کاربر اولیه قبلاً ساخته شده است";
+export async function setupAction(_prev: FormResult, fd: FormData): Promise<FormResult> {
+  if (await hasUsers()) return err("کاربر اولیه قبلاً ساخته شده است");
 
   const phone = normalizePhone(String(fd.get("phone") ?? ""));
   const password = String(fd.get("password") ?? "");
   const first = s(fd, "first_name");
   const last = s(fd, "last_name");
-  if (!phone || !first || !last) return "همه فیلدها لازم است";
-  if (password.length < 6) return "رمز عبور باید حداقل ۶ کاراکتر باشد";
+  if (!phone || !first || !last) return err("همه فیلدها لازم است");
+  if (password.length < 6) return err("رمز عبور باید حداقل ۶ کاراکتر باشد");
 
   const [row] = await sql`
     insert into users (phone, first_name, last_name, password_hash)
@@ -70,62 +78,67 @@ export async function logoutAction() {
   redirect("/login");
 }
 
-export async function createUser(_prev: string | null, fd: FormData) {
-  await requireAuth();
+export async function createUser(_prev: FormResult, fd: FormData): Promise<FormResult> {
+  const me = await requireAuth();
   const phone = normalizePhone(String(fd.get("phone") ?? ""));
   const password = String(fd.get("password") ?? "");
   const first = s(fd, "first_name");
   const last = s(fd, "last_name");
-  if (!phone || !first || !last) return "نام، نام خانوادگی و شماره موبایل لازم است";
-  if (password.length < 6) return "رمز عبور باید حداقل ۶ کاراکتر باشد";
+  if (!phone || !first || !last) return err("نام، نام خانوادگی و شماره موبایل لازم است");
+  if (password.length < 6) return err("رمز عبور باید حداقل ۶ کاراکتر باشد");
 
   const dup = await sql`select 1 from users where phone = ${phone}`;
-  if (dup.length) return "این شماره موبایل قبلاً ثبت شده است";
+  if (dup.length) return err("این شماره موبایل قبلاً ثبت شده است");
 
-  await sql`
+  const [row] = await sql`
     insert into users (phone, first_name, last_name, password_hash)
     values (${phone}, ${first}, ${last}, ${hashPassword(password)})
+    returning id
   `;
+  await logAudit(me, "ایجاد", "user", Number(row.id), `کاربر ${first} ${last} (${phone})`);
   revalidatePath("/users");
-  return null;
+  return ok(`کاربر ${first} ${last} اضافه شد`);
 }
 
-export async function resetPassword(_prev: string | null, fd: FormData) {
-  await requireAuth();
+export async function resetPassword(_prev: FormResult, fd: FormData): Promise<FormResult> {
+  const me = await requireAuth();
   const id = Number(fd.get("id"));
   const password = String(fd.get("password") ?? "");
-  if (password.length < 6) return "رمز عبور باید حداقل ۶ کاراکتر باشد";
+  if (password.length < 6) return err("رمز عبور باید حداقل ۶ کاراکتر باشد");
   await sql`update users set password_hash = ${hashPassword(password)} where id = ${id}`;
+  await logAudit(me, "ویرایش", "user", id, "تغییر رمز عبور توسط مدیر");
   revalidatePath("/users");
-  return null;
+  return ok("رمز جدید ثبت شد");
 }
 
-/** تغییر رمز توسط خود کاربر با تأیید رمز فعلی */
-export async function changeOwnPassword(_prev: string | null, fd: FormData) {
+export async function changeOwnPassword(_prev: FormResult, fd: FormData): Promise<FormResult> {
   const me = await requireAuth();
   const current = String(fd.get("current_password") ?? "");
   const next = String(fd.get("password") ?? "");
-  if (next.length < 6) return "رمز جدید باید حداقل ۶ کاراکتر باشد";
+  if (next.length < 6) return err("رمز جدید باید حداقل ۶ کاراکتر باشد");
 
   const [row] = await sql`select password_hash from users where id = ${me.id}`;
   if (!row || !verifyPassword(current, String(row.password_hash))) {
-    return "رمز فعلی نادرست است";
+    return err("رمز فعلی نادرست است");
   }
   await sql`update users set password_hash = ${hashPassword(next)} where id = ${me.id}`;
-  revalidatePath("/users");
-  return null;
+  await logAudit(me, "ویرایش", "user", me.id, "تغییر رمز عبور خودش");
+  return ok("رمز عبور شما عوض شد");
 }
 
 export async function updateUser(fd: FormData) {
-  await requireAuth();
+  const me = await requireAuth();
   const id = Number(fd.get("id"));
+  const first = s(fd, "first_name") ?? "";
+  const last = s(fd, "last_name") ?? "";
   await sql`
     update users set
-      first_name = ${s(fd, "first_name") ?? ""},
-      last_name  = ${s(fd, "last_name") ?? ""},
+      first_name = ${first},
+      last_name  = ${last},
       phone      = ${normalizePhone(String(fd.get("phone") ?? ""))}
     where id = ${id}
   `;
+  await logAudit(me, "ویرایش", "user", id, `مشخصات ${first} ${last}`);
   revalidatePath("/users");
 }
 
@@ -133,7 +146,19 @@ export async function toggleUserActive(fd: FormData) {
   const me = await requireAuth();
   const id = Number(fd.get("id"));
   if (id === me.id) return; // نمی‌توان حساب خود را غیرفعال کرد
-  await sql`update users set is_active = not is_active where id = ${id}`;
+  const [row] = await sql`
+    update users set is_active = not is_active where id = ${id}
+    returning first_name, last_name, is_active
+  `;
+  if (row) {
+    await logAudit(
+      me,
+      "ویرایش",
+      "user",
+      id,
+      `${row.first_name} ${row.last_name} ${row.is_active ? "فعال" : "غیرفعال"} شد`
+    );
+  }
   revalidatePath("/users");
 }
 
@@ -141,34 +166,108 @@ export async function deleteUser(fd: FormData) {
   const me = await requireAuth();
   const id = Number(fd.get("id"));
   if (id === me.id) return; // نمی‌توان حساب خود را حذف کرد
-  const [{ n }] = await sql`select count(*)::int as n from users where is_active`;
-  if (Number(n) <= 1) return; // آخرین کاربر فعال باقی بماند
-  await sql`delete from users where id = ${id}`;
+  const [{ n: activeCount }] = await sql`select count(*)::int as n from users where is_active`;
+  if (Number(activeCount) <= 1) return; // آخرین کاربر فعال باقی بماند
+  const [row] = await sql`delete from users where id = ${id} returning first_name, last_name`;
+  if (row) await logAudit(me, "حذف", "user", id, `کاربر ${row.first_name} ${row.last_name}`);
   revalidatePath("/users");
 }
 
-/* ---------- فاکتور ---------- */
 
-export async function createInvoice(fd: FormData) {
-  await requireAuth();
-  const no = s(fd, "invoice_no");
-  if (!no) return;
+/* ================= کالاها ================= */
+
+export async function createProduct(_prev: FormResult, fd: FormData): Promise<FormResult> {
+  const me = await requireAuth();
+  const sku = s(fd, "sku");
+  const name = s(fd, "name");
+  if (!sku || !name) return err("کد کالا و نام کالا لازم است");
+
+  const dup = await sql`select 1 from products where sku = ${sku}`;
+  if (dup.length) return err(`کالایی با کد ${sku} از قبل ثبت شده است`);
+
+  const [row] = await sql`
+    insert into products (sku, name, category, unit, last_price, notes)
+    values (${sku}, ${name}, ${s(fd, "category")}, ${s(fd, "unit")},
+            ${n(fd, "last_price")}, ${s(fd, "notes")})
+    returning id
+  `;
+  await logAudit(me, "ایجاد", "product", Number(row.id), `${sku} — ${name}`);
+  revalidatePath("/products");
+  return ok(`کالای ${sku} ثبت شد`);
+}
+
+export async function updateProduct(_prev: FormResult, fd: FormData): Promise<FormResult> {
+  const me = await requireAuth();
+  const id = Number(fd.get("id"));
+  const sku = s(fd, "sku");
+  const name = s(fd, "name");
+  if (!sku || !name) return err("کد کالا و نام کالا لازم است");
+
+  const dup = await sql`select 1 from products where sku = ${sku} and id <> ${id}`;
+  if (dup.length) return err(`کد ${sku} برای کالای دیگری ثبت شده است`);
+
   await sql`
+    update products set
+      sku = ${sku}, name = ${name}, category = ${s(fd, "category")},
+      unit = ${s(fd, "unit")}, last_price = ${n(fd, "last_price")},
+      notes = ${s(fd, "notes")}, is_active = ${fd.get("is_active") === "off" ? false : true}
+    where id = ${id}
+  `;
+  // اقلام فاکتور کد و شرح کالا را از تعریف کالا می‌گیرند
+  await sql`update invoice_items set sku = ${sku}, description = ${name} where product_id = ${id}`;
+  await logAudit(me, "ویرایش", "product", id, `${sku} — ${name}`);
+  revalidatePath("/products");
+  revalidatePath("/invoices");
+  return ok("تغییرات ذخیره شد");
+}
+
+export async function deleteProduct(fd: FormData) {
+  const me = await requireAuth();
+  const id = Number(fd.get("id"));
+  const [{ n: used }] = await sql`
+    select count(*)::int as n from invoice_items where product_id = ${id}
+  `;
+  // کالایی که در فاکتوری استفاده شده حذف نمی‌شود، فقط غیرفعال می‌شود
+  if (Number(used) > 0) {
+    await sql`update products set is_active = false where id = ${id}`;
+    const [p] = await sql`select sku from products where id = ${id}`;
+    await logAudit(me, "ویرایش", "product", id, `${p?.sku ?? id} غیرفعال شد (در ${used} قلم استفاده شده)`);
+  } else {
+    const [p] = await sql`delete from products where id = ${id} returning sku`;
+    if (p) await logAudit(me, "حذف", "product", id, `کالای ${p.sku}`);
+  }
+  revalidatePath("/products");
+}
+
+/* ================= فاکتور ================= */
+
+export async function createInvoice(_prev: FormResult, fd: FormData): Promise<FormResult> {
+  const me = await requireAuth();
+  const no = s(fd, "invoice_no");
+  if (!no) return err("شماره فاکتور لازم است");
+
+  const dup = await sql`select 1 from invoices where invoice_no = ${no}`;
+  if (dup.length) return err(`فاکتور ${no} قبلاً ثبت شده است`);
+
+  const [row] = await sql`
     insert into invoices (invoice_no, supplier, invoice_date, currency, total_amount, due_date, notes)
     values (${no}, ${s(fd, "supplier")}, ${s(fd, "invoice_date")}, ${s(fd, "currency") ?? "RMB"},
             ${n(fd, "total_amount") ?? 0}, ${s(fd, "due_date")}, ${s(fd, "notes")})
-    on conflict (invoice_no) do nothing
+    returning id
   `;
+  await logAudit(me, "ایجاد", "invoice", Number(row.id), `فاکتور ${no}`);
   revalidatePath("/invoices");
   revalidatePath("/");
+  return ok(`فاکتور ${no} ثبت شد`);
 }
 
 export async function updateInvoice(fd: FormData) {
-  await requireAuth();
+  const me = await requireAuth();
   const id = Number(fd.get("id"));
+  const no = s(fd, "invoice_no") ?? "";
   await sql`
     update invoices set
-      invoice_no   = ${s(fd, "invoice_no") ?? ""},
+      invoice_no   = ${no},
       supplier     = ${s(fd, "supplier")},
       invoice_date = ${s(fd, "invoice_date")},
       currency     = ${s(fd, "currency") ?? "RMB"},
@@ -177,143 +276,293 @@ export async function updateInvoice(fd: FormData) {
       notes        = ${s(fd, "notes")}
     where id = ${id}
   `;
+  await logAudit(me, "ویرایش", "invoice", id, `فاکتور ${no}`);
   revalidatePath(`/invoices/${id}`);
   revalidatePath("/invoices");
 }
 
 export async function deleteInvoice(fd: FormData) {
-  await requireAuth();
-  await sql`delete from invoices where id = ${Number(fd.get("id"))}`;
+  const me = await requireAuth();
+  const id = Number(fd.get("id"));
+  const [row] = await sql`delete from invoices where id = ${id} returning invoice_no`;
+  if (row) await logAudit(me, "حذف", "invoice", id, `فاکتور ${row.invoice_no} با همه اقلام و پرداخت‌ها`);
   revalidatePath("/invoices");
   redirect("/invoices");
 }
 
-/* ---------- قلم کالا ---------- */
+/* ================= قلم کالا ================= */
 
-export async function createItem(fd: FormData) {
-  await requireAuth();
+export async function createItem(_prev: FormResult, fd: FormData): Promise<FormResult> {
+  const me = await requireAuth();
   const invoiceId = Number(fd.get("invoice_id"));
-  await sql`
-    insert into invoice_items (invoice_id, sku, description, qty, unit_price, notes)
-    values (${invoiceId}, ${s(fd, "sku")}, ${s(fd, "description")},
-            ${n(fd, "qty") ?? 0}, ${n(fd, "unit_price") ?? 0}, ${s(fd, "notes")})
+  const productId = Number(fd.get("product_id"));
+  if (!productId) return err("کالا را از فهرست کالاها انتخاب کنید");
+
+  const qty = n(fd, "qty") ?? 0;
+  const price = n(fd, "unit_price") ?? 0;
+  if (qty <= 0) return err("تعداد باید بزرگ‌تر از صفر باشد");
+  if (price < 0) return err("قیمت واحد نمی‌تواند منفی باشد");
+
+  const [product] = await sql`select sku, name from products where id = ${productId}`;
+  if (!product) return err("کالا پیدا نشد");
+
+  const [row] = await sql`
+    insert into invoice_items (invoice_id, product_id, sku, description, qty, unit_price, notes)
+    values (${invoiceId}, ${productId}, ${product.sku}, ${product.name}, ${qty}, ${price}, ${s(fd, "notes")})
+    returning id
   `;
+  // آخرین قیمت کالا برای پیشنهاد دفعه بعد
+  await sql`update products set last_price = ${price} where id = ${productId}`;
+  await logAudit(me, "ایجاد", "item", Number(row.id), `${product.sku} × ${qty}`);
   revalidatePath(`/invoices/${invoiceId}`);
+  revalidatePath("/products");
+  return ok(`${product.sku} اضافه شد`);
 }
 
-export async function updateItem(fd: FormData) {
-  await requireAuth();
+export async function updateItem(_prev: FormResult, fd: FormData): Promise<FormResult> {
+  const me = await requireAuth();
   const id = Number(fd.get("id"));
   const invoiceId = Number(fd.get("invoice_id"));
-  await sql`
-    update invoice_items set
-      sku = ${s(fd, "sku")}, description = ${s(fd, "description")},
-      qty = ${n(fd, "qty") ?? 0}, unit_price = ${n(fd, "unit_price") ?? 0},
-      notes = ${s(fd, "notes")}
-    where id = ${id}
+  const qty = n(fd, "qty") ?? 0;
+  const price = n(fd, "unit_price") ?? 0;
+  if (qty <= 0) return err("تعداد باید بزرگ‌تر از صفر باشد");
+
+  // تعداد قلم نباید کمتر از چیزی شود که قبلاً به پارت‌ها تخصیص یافته
+  const [{ allocated }] = await sql`
+    select coalesce(sum(qty_shipped), 0) as allocated from allocations where item_id = ${id}
   `;
+  if (qty < Number(allocated)) {
+    return err(`${allocated} عدد از این قلم به پارت‌ها تخصیص یافته؛ تعداد نمی‌تواند کمتر از آن باشد.`);
+  }
+
+  const [row] = await sql`
+    update invoice_items set qty = ${qty}, unit_price = ${price}, notes = ${s(fd, "notes")}
+    where id = ${id}
+    returning sku
+  `;
+  await logAudit(me, "ویرایش", "item", id, `${row?.sku ?? "قلم"} — تعداد ${qty}`);
   revalidatePath(`/invoices/${invoiceId}`);
+  return ok("ذخیره شد");
 }
 
 export async function deleteItem(fd: FormData) {
-  await requireAuth();
-  await sql`delete from invoice_items where id = ${Number(fd.get("id"))}`;
+  const me = await requireAuth();
+  const id = Number(fd.get("id"));
+  const [row] = await sql`delete from invoice_items where id = ${id} returning sku, qty`;
+  if (row) await logAudit(me, "حذف", "item", id, `${row.sku ?? "قلم"} × ${row.qty}`);
   revalidatePath(`/invoices/${Number(fd.get("invoice_id"))}`);
 }
 
-/* ---------- پرداخت ---------- */
+/* ================= پرداخت ================= */
 
-export async function createPayment(fd: FormData) {
-  await requireAuth();
+export async function createPayment(_prev: FormResult, fd: FormData): Promise<FormResult> {
+  const me = await requireAuth();
   const invoiceId = Number(fd.get("invoice_id"));
-  await sql`
-    insert into payments (invoice_id, payment_date, amount, method, reference, notes)
-    values (${invoiceId}, ${s(fd, "payment_date")}, ${n(fd, "amount") ?? 0},
-            ${s(fd, "method")}, ${s(fd, "reference")}, ${s(fd, "notes")})
+  const amount = n(fd, "amount") ?? 0;
+  if (amount <= 0) return err("مبلغ پرداخت باید بزرگ‌تر از صفر باشد");
+
+  const [inv] = await sql`
+    select invoice_no, total_amount,
+      coalesce((select sum(amount) from payments where invoice_id = ${invoiceId}), 0) as paid
+    from invoices where id = ${invoiceId}
   `;
+  if (!inv) return err("فاکتور پیدا نشد");
+
+  const remaining = Number(inv.total_amount) - Number(inv.paid);
+  if (amount > remaining + 0.005) {
+    return err(
+      `مبلغ از مانده فاکتور بیشتر است. مانده: ${money(remaining)} — اگر عمدی است، اول مبلغ کل فاکتور را اصلاح کنید.`
+    );
+  }
+
+  const [row] = await sql`
+    insert into payments (invoice_id, payment_date, amount, method, reference, notes)
+    values (${invoiceId}, ${s(fd, "payment_date")}, ${amount},
+            ${s(fd, "method")}, ${s(fd, "reference")}, ${s(fd, "notes")})
+    returning id
+  `;
+  await logAudit(me, "ایجاد", "payment", Number(row.id), `${money(amount)} برای فاکتور ${inv.invoice_no}`);
   revalidatePath(`/invoices/${invoiceId}`);
   revalidatePath("/");
+  return ok("پرداخت ثبت شد");
 }
 
 export async function deletePayment(fd: FormData) {
-  await requireAuth();
-  await sql`delete from payments where id = ${Number(fd.get("id"))}`;
+  const me = await requireAuth();
+  const id = Number(fd.get("id"));
+  const [row] = await sql`delete from payments where id = ${id} returning amount`;
+  if (row) await logAudit(me, "حذف", "payment", id, `پرداخت ${money(row.amount)}`);
   revalidatePath(`/invoices/${Number(fd.get("invoice_id"))}`);
 }
 
-/* ---------- پارت ارسال ---------- */
+/* ================= پارت ارسال ================= */
 
-export async function createShipment(fd: FormData) {
-  await requireAuth();
+export async function createShipment(_prev: FormResult, fd: FormData): Promise<FormResult> {
+  const me = await requireAuth();
   const no = s(fd, "shipment_no");
-  if (!no) return;
-  await sql`
+  if (!no) return err("شماره پارت لازم است");
+
+  const dup = await sql`select 1 from shipments where shipment_no = ${no}`;
+  if (dup.length) return err(`پارت ${no} قبلاً ثبت شده است`);
+
+  const handover = s(fd, "handover_date");
+  const depart = s(fd, "depart_date");
+  const receive = s(fd, "receive_date");
+  const dateError = checkShipmentDates(handover, depart, receive);
+  if (dateError) return err(dateError);
+
+  const [row] = await sql`
     insert into shipments (shipment_no, carrier, mode, tracking_no, handover_date,
                            depart_date, receive_date, freight_cost, weight_kg, cbm, notes)
     values (${no}, ${s(fd, "carrier")}, ${s(fd, "mode")}, ${s(fd, "tracking_no")},
-            ${s(fd, "handover_date")}, ${s(fd, "depart_date")}, ${s(fd, "receive_date")},
+            ${handover}, ${depart}, ${receive},
             ${n(fd, "freight_cost") ?? 0}, ${n(fd, "weight_kg")}, ${n(fd, "cbm")}, ${s(fd, "notes")})
-    on conflict (shipment_no) do nothing
+    returning id
   `;
+  await logAudit(me, "ایجاد", "shipment", Number(row.id), `پارت ${no}`);
   revalidatePath("/shipments");
   revalidatePath("/");
+  return ok(`پارت ${no} ثبت شد`);
 }
 
-export async function updateShipment(fd: FormData) {
-  await requireAuth();
+function checkShipmentDates(handover: string | null, depart: string | null, receive: string | null) {
+  if (handover && depart && depart < handover) return "تاریخ خروج نمی‌تواند قبل از تحویل به کارگو باشد";
+  if (depart && receive && receive < depart) return "تاریخ دریافت نمی‌تواند قبل از تاریخ خروج باشد";
+  if (handover && receive && receive < handover) return "تاریخ دریافت نمی‌تواند قبل از تحویل به کارگو باشد";
+  return null;
+}
+
+export async function updateShipment(_prev: FormResult, fd: FormData): Promise<FormResult> {
+  const me = await requireAuth();
   const id = Number(fd.get("id"));
+  const no = s(fd, "shipment_no") ?? "";
+  const handover = s(fd, "handover_date");
+  const depart = s(fd, "depart_date");
+  const receive = s(fd, "receive_date");
+  const dateError = checkShipmentDates(handover, depart, receive);
+  if (dateError) return err(dateError);
+
   await sql`
     update shipments set
-      shipment_no = ${s(fd, "shipment_no") ?? ""}, carrier = ${s(fd, "carrier")},
+      shipment_no = ${no}, carrier = ${s(fd, "carrier")},
       mode = ${s(fd, "mode")}, tracking_no = ${s(fd, "tracking_no")},
-      handover_date = ${s(fd, "handover_date")}, depart_date = ${s(fd, "depart_date")},
-      receive_date = ${s(fd, "receive_date")}, freight_cost = ${n(fd, "freight_cost") ?? 0},
+      handover_date = ${handover}, depart_date = ${depart}, receive_date = ${receive},
+      freight_cost = ${n(fd, "freight_cost") ?? 0},
       weight_kg = ${n(fd, "weight_kg")}, cbm = ${n(fd, "cbm")}, notes = ${s(fd, "notes")}
     where id = ${id}
   `;
+  await logAudit(me, "ویرایش", "shipment", id, `پارت ${no}`);
   revalidatePath(`/shipments/${id}`);
   revalidatePath("/shipments");
+  return ok("تغییرات ذخیره شد");
 }
 
 export async function deleteShipment(fd: FormData) {
-  await requireAuth();
-  await sql`delete from shipments where id = ${Number(fd.get("id"))}`;
+  const me = await requireAuth();
+  const id = Number(fd.get("id"));
+  const [row] = await sql`delete from shipments where id = ${id} returning shipment_no`;
+  if (row) await logAudit(me, "حذف", "shipment", id, `پارت ${row.shipment_no} با همه تخصیص‌ها`);
   revalidatePath("/shipments");
   redirect("/shipments");
 }
 
-/* ---------- تخصیص ---------- */
+/* ================= تخصیص ================= */
 
-export async function createAllocation(fd: FormData) {
-  await requireAuth();
-  const shipmentId = Number(fd.get("shipment_id"));
-  const itemId = Number(fd.get("item_id"));
-  if (!shipmentId || !itemId) return;
-  await sql`
-    insert into allocations (item_id, shipment_id, qty_shipped, qty_received)
-    values (${itemId}, ${shipmentId}, ${n(fd, "qty_shipped") ?? 0}, ${n(fd, "qty_received") ?? 0})
-    on conflict (item_id, shipment_id) do update
-      set qty_shipped = excluded.qty_shipped, qty_received = excluded.qty_received
+/** تعداد باقی‌مانده یک قلم، بدون احتساب تخصیص فعلی (برای ویرایش) */
+async function itemCapacity(itemId: number, ignoreAllocationId?: number) {
+  const [row] = await sql`
+    select ii.qty, ii.sku, ii.description, i.invoice_no,
+      coalesce((
+        select sum(qty_shipped) from allocations
+        where item_id = ii.id and (${ignoreAllocationId ?? 0}::int = 0 or id <> ${ignoreAllocationId ?? 0})
+      ), 0) as allocated
+    from invoice_items ii
+    join invoices i on i.id = ii.invoice_id
+    where ii.id = ${itemId}
   `;
-  revalidatePath(`/shipments/${shipmentId}`);
-  revalidatePath("/invoices");
+  if (!row) return null;
+  return {
+    qty: Number(row.qty),
+    allocated: Number(row.allocated),
+    remaining: Number(row.qty) - Number(row.allocated),
+    label: `${row.invoice_no} — ${row.sku ?? row.description ?? "قلم"}`,
+  };
 }
 
-export async function updateAllocation(fd: FormData) {
-  await requireAuth();
-  const id = Number(fd.get("id"));
-  await sql`
-    update allocations set
-      qty_shipped  = ${n(fd, "qty_shipped") ?? 0},
-      qty_received = ${n(fd, "qty_received") ?? 0}
-    where id = ${id}
+export async function createAllocation(_prev: FormResult, fd: FormData): Promise<FormResult> {
+  const me = await requireAuth();
+  const shipmentId = Number(fd.get("shipment_id"));
+  const itemId = Number(fd.get("item_id"));
+  if (!shipmentId || !itemId) return err("فاکتور و کالا را انتخاب کنید");
+
+  const shipped = n(fd, "qty_shipped") ?? 0;
+  const received = n(fd, "qty_received") ?? 0;
+  if (shipped <= 0) return err("تعداد ارسال باید بزرگ‌تر از صفر باشد");
+  if (received > shipped) return err("تعداد دریافت‌شده نمی‌تواند از تعداد ارسال‌شده بیشتر باشد");
+
+  // اگر همین کالا قبلاً در همین پارت هست، تخصیص قبلی جایگزین می‌شود
+  const [existing] = await sql`
+    select id from allocations where item_id = ${itemId} and shipment_id = ${shipmentId}
   `;
-  revalidatePath(`/shipments/${Number(fd.get("shipment_id"))}`);
+  const cap = await itemCapacity(itemId, existing ? Number(existing.id) : undefined);
+  if (!cap) return err("کالا پیدا نشد");
+  if (shipped > cap.remaining + 0.0005) {
+    return err(
+      `بیشتر از باقی‌مانده است. از «${cap.label}» فقط ${cap.remaining} عدد باقی مانده (کل ${cap.qty}، تخصیص‌یافته ${cap.allocated}).`
+    );
+  }
+
+  const [row] = await sql`
+    insert into allocations (item_id, shipment_id, qty_shipped, qty_received)
+    values (${itemId}, ${shipmentId}, ${shipped}, ${received})
+    on conflict (item_id, shipment_id) do update
+      set qty_shipped = excluded.qty_shipped, qty_received = excluded.qty_received
+    returning id
+  `;
+  const [sh] = await sql`select shipment_no from shipments where id = ${shipmentId}`;
+  await logAudit(
+    me,
+    existing ? "ویرایش" : "ایجاد",
+    "allocation",
+    Number(row.id),
+    `${cap.label} × ${shipped} در پارت ${sh?.shipment_no ?? shipmentId}`
+  );
+  revalidatePath(`/shipments/${shipmentId}`);
   revalidatePath("/invoices");
+  return ok(`${shipped} عدد به پارت اضافه شد`);
+}
+
+export async function updateAllocation(_prev: FormResult, fd: FormData): Promise<FormResult> {
+  const me = await requireAuth();
+  const id = Number(fd.get("id"));
+  const shipmentId = Number(fd.get("shipment_id"));
+  const shipped = n(fd, "qty_shipped") ?? 0;
+  const received = n(fd, "qty_received") ?? 0;
+  if (shipped < 0 || received < 0) return err("تعداد نمی‌تواند منفی باشد");
+  if (received > shipped) return err("تعداد دریافت‌شده نمی‌تواند از تعداد ارسال‌شده بیشتر باشد");
+
+  const [alloc] = await sql`select item_id from allocations where id = ${id}`;
+  if (!alloc) return err("تخصیص پیدا نشد");
+
+  const cap = await itemCapacity(Number(alloc.item_id), id);
+  if (cap && shipped > cap.remaining + 0.0005) {
+    return err(`بیشتر از باقی‌مانده است. حداکثر ${cap.remaining} عدد می‌توانید بگذارید.`);
+  }
+
+  await sql`
+    update allocations set qty_shipped = ${shipped}, qty_received = ${received} where id = ${id}
+  `;
+  await logAudit(me, "ویرایش", "allocation", id, `${cap?.label ?? "تخصیص"} → ارسال ${shipped}، دریافت ${received}`);
+  revalidatePath(`/shipments/${shipmentId}`);
+  revalidatePath("/invoices");
+  return ok("ذخیره شد");
 }
 
 export async function deleteAllocation(fd: FormData) {
-  await requireAuth();
-  await sql`delete from allocations where id = ${Number(fd.get("id"))}`;
+  const me = await requireAuth();
+  const id = Number(fd.get("id"));
+  const [row] = await sql`delete from allocations where id = ${id} returning qty_shipped`;
+  if (row) await logAudit(me, "حذف", "allocation", id, `تخصیص ${row.qty_shipped} عدد`);
   revalidatePath(`/shipments/${Number(fd.get("shipment_id"))}`);
+  revalidatePath("/invoices");
 }

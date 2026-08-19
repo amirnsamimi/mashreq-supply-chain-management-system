@@ -8,6 +8,7 @@ import {
   listPayments,
   listProducts,
   listShipments,
+  listSuppliers,
 } from "@/lib/queries";
 import { listAudit } from "@/lib/audit";
 import { money, jalali } from "@/lib/format";
@@ -33,6 +34,7 @@ export default async function InvoicePage({
   const payments = await listPayments(id);
   const shipments = await listShipments();
   const products = await listProducts();
+  const suppliers = await listSuppliers();
   const history = await listAudit(15, "invoice", id);
   const allocsByItem = Object.fromEntries(
     await Promise.all(
@@ -109,7 +111,7 @@ export default async function InvoicePage({
           balance={inv.balance}
           currency={cur}
         />
-        <InvoiceEditCard inv={inv} />
+        <InvoiceEditCard inv={inv} suppliers={suppliers} />
       </div>
 
       {history.length > 0 && (

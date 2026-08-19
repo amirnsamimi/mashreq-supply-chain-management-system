@@ -2,16 +2,22 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import type { Invoice } from "@/lib/queries";
+import type { Invoice, Supplier } from "@/lib/queries";
 import { money, jalali } from "@/lib/format";
 import { createInvoice } from "@/lib/actions";
 import { CURRENCIES } from "@/lib/lists";
 import { ActionForm, Submit } from "@/components/ActionForm";
-import { Badge, Card, DataTable, Input, Modal, NumberInput, SelectField, DateInput, Button } from "@/components/geist";
+import { Badge, Button, Card, Combobox, DataTable, DateInput, Input, Modal, NumberInput, SelectField } from "@/components/geist";
 import type { Column } from "@/components/geist/DataTable";
 import { statusTone } from "@/lib/tones";
 
-export function InvoicesClient({ invoices }: { invoices: Invoice[] }) {
+export function InvoicesClient({
+  invoices,
+  suppliers,
+}: {
+  invoices: Invoice[];
+  suppliers: Supplier[];
+}) {
   const [open, setOpen] = useState(false);
 
   const columns: Column<Invoice>[] = [
@@ -113,7 +119,7 @@ export function InvoicesClient({ invoices }: { invoices: Invoice[] }) {
         />
       </Card>
 
-      <NewInvoiceButton open={open} setOpen={setOpen} />
+      <NewInvoiceButton open={open} setOpen={setOpen} suppliers={suppliers} />
     </>
   );
 }
@@ -121,17 +127,37 @@ export function InvoicesClient({ invoices }: { invoices: Invoice[] }) {
 export function NewInvoiceButton({
   open,
   setOpen,
+  suppliers,
 }: {
   open: boolean;
   setOpen: (v: boolean) => void;
+  suppliers: Supplier[];
 }) {
+  const [supplierId, setSupplierId] = useState("");
+  const active = suppliers.filter((s) => s.is_active);
+
   return (
     <Modal open={open} onClose={() => setOpen(false)} title="فاکتور جدید" footer={null} width={640}>
       <ActionForm action={createInvoice} className="grid gap-4 sm:grid-cols-2">
         {(state) => (
           <>
             <Input name="invoice_no" label="شماره فاکتور" required placeholder="INV-001" dir="ltr" />
-            <Input name="supplier" label="فروشنده" />
+            <Combobox
+              label="تأمین‌کننده"
+              name="supplier_id"
+              placeholder={
+                suppliers.length ? "جست‌وجو و انتخاب تأمین‌کننده…" : "اول در «تأمین‌کنندگان» تعریف کنید"
+              }
+              emptyText="تأمین‌کننده‌ای پیدا نشد"
+              disabled={suppliers.length === 0}
+              options={active.map((s) => ({
+                value: String(s.id),
+                label: s.name,
+                hint: s.country ?? undefined,
+              }))}
+              value={supplierId}
+              onChange={setSupplierId}
+            />
             <DateInput name="invoice_date" label="تاریخ فاکتور" />
             <SelectField name="currency" label="ارز" defaultValue="RMB" options={CURRENCIES} />
             <NumberInput name="total_amount" label="مبلغ کل فاکتور" defaultValue={0} />

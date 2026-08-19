@@ -6,7 +6,9 @@ import { isoToJalaliString } from "@/lib/jalali";
 import {
   listInvoices,
   listItems,
+  listProducts,
   listShipments,
+  listSuppliers,
 } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
@@ -54,6 +56,20 @@ export async function GET(
       rows.map((r) => [r.invoice_no, r.supplier, jd(r.invoice_date), r.currency, r.total_amount, r.items_total, r.diff, r.paid, r.balance, jd(r.due_date), jd(r.last_payment_date), r.payment_status, r.invoice_status, r.notes])
     );
     filename = "فاکتورها";
+  } else if (kind === "suppliers") {
+    const rows = await listSuppliers();
+    content = csv(
+      ["نام تأمین‌کننده","شخص رابط","تلفن","ایمیل","کشور","شهر","آدرس","تعداد فاکتور","جمع خرید","مانده بدهی","وضعیت","توضیحات"],
+      rows.map((r) => [r.name, r.contact, r.phone, r.email, r.country, r.city, r.address, r.invoice_count, r.total_amount, r.balance, r.is_active ? "فعال" : "غیرفعال", r.notes])
+    );
+    filename = "تأمین-کنندگان";
+  } else if (kind === "products") {
+    const rows = await listProducts();
+    content = csv(
+      ["کد کالا/SKU","نام کالا","دسته","واحد","آخرین قیمت واحد","در چند فاکتور","جمع تعداد خریداری‌شده","وضعیت","توضیحات"],
+      rows.map((r) => [r.sku, r.name, r.category, r.unit, r.last_price, r.invoice_count, r.total_qty, r.is_active ? "فعال" : "غیرفعال", r.notes])
+    );
+    filename = "کالاها";
   } else if (kind === "items") {
     const invoiceId = req.nextUrl.searchParams.get("invoice");
     const invoices = await listInvoices();

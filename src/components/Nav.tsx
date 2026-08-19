@@ -4,6 +4,7 @@ import { ThemeToggle } from "./ThemeToggle";
 
 const links = [
   { href: "/", label: "داشبورد" },
+  { href: "/suppliers", label: "تأمین‌کنندگان" },
   { href: "/products", label: "کالاها" },
   { href: "/invoices", label: "فاکتورها" },
   { href: "/payments", label: "پرداخت‌ها" },

@@ -79,6 +79,7 @@ function shapeInvoice(r: Record<string, unknown>) {
     id: r.id as number,
     invoice_no: r.invoice_no as string,
     supplier: (r.supplier as string | null) ?? null,
+    supplier_id: r.supplier_id === null || r.supplier_id === undefined ? null : Number(r.supplier_id),
     invoice_date: d(r.invoice_date),
     currency: (r.currency as string | null) ?? null,
     due_date: d(r.due_date),
@@ -426,4 +427,47 @@ export async function listAllPayments(): Promise<PaymentRow[]> {
     reference: (r.reference as string | null) ?? null,
     notes: (r.notes as string | null) ?? null,
   }));
+}
+
+/* ---------- تأمین‌کنندگان ---------- */
+
+export type Supplier = {
+  id: number;
+  name: string;
+  contact: string | null;
+  phone: string | null;
+  email: string | null;
+  country: string | null;
+  city: string | null;
+  address: string | null;
+  notes: string | null;
+  is_active: boolean;
+  invoice_count: number;
+  total_amount: number;
+  balance: number;
+};
+
+export async function listSuppliers(): Promise<Supplier[]> {
+  const invoices = await listInvoices();
+  const rows = await sql`select * from suppliers order by name`;
+
+  return rows.map((r) => {
+    const id = Number(r.id);
+    const mine = invoices.filter((i) => i.supplier_id === id);
+    return {
+      id,
+      name: String(r.name),
+      contact: (r.contact as string | null) ?? null,
+      phone: (r.phone as string | null) ?? null,
+      email: (r.email as string | null) ?? null,
+      country: (r.country as string | null) ?? null,
+      city: (r.city as string | null) ?? null,
+      address: (r.address as string | null) ?? null,
+      notes: (r.notes as string | null) ?? null,
+      is_active: Boolean(r.is_active),
+      invoice_count: mine.length,
+      total_amount: mine.reduce((s, i) => s + i.total_amount, 0),
+      balance: mine.reduce((s, i) => s + i.balance, 0),
+    };
+  });
 }

@@ -13,6 +13,7 @@ export type ImportReport = {
 
 /* نام شیت‌ها و ستون‌های فایل اکسل اصلی */
 const SHEETS = {
+  suppliers: "تأمین‌کنندگان",
   products: "کالاها",
   invoices: "فاکتورها",
   items: "اقلام فاکتور",
@@ -116,7 +117,7 @@ export async function importWorkbook(
   data: ArrayBuffer
 ): Promise<ImportReport> {
   const counts: Record<string, number> = {
-    کالا: 0, فاکتور: 0, "قلم کالا": 0, "پارت ارسال": 0, تخصیص: 0, پرداخت: 0,
+    "تأمین‌کننده": 0, کالا: 0, فاکتور: 0, "قلم کالا": 0, "پارت ارسال": 0, تخصیص: 0, پرداخت: 0,
   };
   const warnings: string[] = [];
 
@@ -129,6 +130,48 @@ export async function importWorkbook(
 
   const find = (name: string) =>
     wb.worksheets.find((w) => normalizeHeader(w.name) === normalizeHeader(name));
+
+  /* ---- تأمین‌کنندگان ---- */
+  const supplierIdByName = new Map<string, number>();
+  const wsSuppliers = find(SHEETS.suppliers);
+  if (wsSuppliers) {
+    for (const r of sheetRows(wsSuppliers)) {
+      const name = text(pick(r, "نام تأمین‌کننده", "تأمین‌کننده", "فروشنده"));
+      if (!name) continue;
+      const existing = await sql`select id from suppliers where name = ${name}`;
+      if (existing.length) {
+        supplierIdByName.set(name, Number(existing[0].id));
+        continue;
+      }
+      const [row] = await sql`
+        insert into suppliers (name, contact, phone, email, country, city, address, notes)
+        values (${name}, ${text(pick(r, "شخص رابط"))}, ${text(pick(r, "تلفن"))},
+                ${text(pick(r, "ایمیل"))}, ${text(pick(r, "کشور"))}, ${text(pick(r, "شهر"))},
+                ${text(pick(r, "آدرس"))}, ${text(pick(r, "توضیحات"))})
+        returning id
+      `;
+      supplierIdByName.set(name, Number(row.id));
+      counts["تأمین‌کننده"]++;
+    }
+  }
+
+  for (const r of await sql`select id, name from suppliers`) {
+    if (!supplierIdByName.has(String(r.name))) supplierIdByName.set(String(r.name), Number(r.id));
+  }
+
+  /** فروشنده‌ای که در شیت تأمین‌کنندگان نبوده، از روی فاکتور ساخته می‌شود */
+  async function ensureSupplier(name: string) {
+    const known = supplierIdByName.get(name);
+    if (known) return known;
+    const [row] = await sql`
+      insert into suppliers (name) values (${name})
+      on conflict (name) do update set name = excluded.name
+      returning id
+    `;
+    supplierIdByName.set(name, Number(row.id));
+    counts["تأمین‌کننده"]++;
+    return Number(row.id);
+  }
 
   /* ---- کالاها ---- */
   const productIdBySku = new Map<string, number>();
@@ -185,9 +228,11 @@ export async function importWorkbook(
         warnings.push(`فاکتور ${no} از قبل وجود داشت و دست‌نخورده ماند`);
         continue;
       }
+      const supplierName = text(pick(r, "فروشنده", "تأمین‌کننده", "نام تأمین‌کننده"));
+      const supplierId = supplierName ? await ensureSupplier(supplierName) : null;
       const [row] = await sql`
-        insert into invoices (invoice_no, supplier, invoice_date, currency, total_amount, due_date, notes)
-        values (${no}, ${text(pick(r, "فروشنده"))}, ${date(pick(r, "تاریخ فاکتور"))},
+        insert into invoices (invoice_no, supplier_id, supplier, invoice_date, currency, total_amount, due_date, notes)
+        values (${no}, ${supplierId}, ${supplierName}, ${date(pick(r, "تاریخ فاکتور"))},
                 ${text(pick(r, "ارز")) ?? "RMB"}, ${num(pick(r, "مبلغ کل فاکتور")) ?? 0},
                 ${date(pick(r, "تاریخ سررسید"))}, ${text(pick(r, "توضیحات"))})
         returning id

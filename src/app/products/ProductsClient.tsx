@@ -70,6 +70,11 @@ export function ProductsClient({ products }: { products: Product[] }) {
         searchPlaceholder="جست‌وجو در کد، نام یا دسته کالا…"
         emptyTitle="هنوز کالایی تعریف نشده است"
         emptyHint="اول کالاها را تعریف کنید تا بتوانید در فاکتورها از فهرست انتخابشان کنید"
+        toolbar={
+          <a href="/api/export/products" download>
+            <Button size="small">خروجی اکسل</Button>
+          </a>
+        }
       />
       <EditProductModal product={edit} onClose={() => setEdit(null)} />
     </Card>

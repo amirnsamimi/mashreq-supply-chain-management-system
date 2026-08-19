@@ -10,6 +10,7 @@ export const ENTITIES = {
   allocation: "تخصیص به پارت",
   payment: "پرداخت",
   product: "کالا",
+  supplier: "تأمین‌کننده",
   user: "کاربر",
   import: "ورود داده",
 } as const;

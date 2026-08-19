@@ -239,6 +239,69 @@ export async function deleteProduct(fd: FormData) {
   revalidatePath("/products");
 }
 
+
+/* ================= تأمین‌کنندگان ================= */
+
+export async function createSupplier(_prev: FormResult, fd: FormData): Promise<FormResult> {
+  const me = await requireAuth();
+  const name = s(fd, "name");
+  if (!name) return err("نام تأمین‌کننده لازم است");
+
+  const dup = await sql`select 1 from suppliers where name = ${name}`;
+  if (dup.length) return err(`تأمین‌کننده‌ای با نام ${name} از قبل ثبت شده است`);
+
+  const [row] = await sql`
+    insert into suppliers (name, contact, phone, email, country, city, address, notes)
+    values (${name}, ${s(fd, "contact")}, ${s(fd, "phone")}, ${s(fd, "email")},
+            ${s(fd, "country")}, ${s(fd, "city")}, ${s(fd, "address")}, ${s(fd, "notes")})
+    returning id
+  `;
+  await logAudit(me, "ایجاد", "supplier", Number(row.id), `تأمین‌کننده ${name}`);
+  revalidatePath("/suppliers");
+  return ok(`${name} ثبت شد`);
+}
+
+export async function updateSupplier(_prev: FormResult, fd: FormData): Promise<FormResult> {
+  const me = await requireAuth();
+  const id = Number(fd.get("id"));
+  const name = s(fd, "name");
+  if (!name) return err("نام تأمین‌کننده لازم است");
+
+  const dup = await sql`select 1 from suppliers where name = ${name} and id <> ${id}`;
+  if (dup.length) return err(`نام ${name} برای تأمین‌کننده دیگری ثبت شده است`);
+
+  await sql`
+    update suppliers set
+      name = ${name}, contact = ${s(fd, "contact")}, phone = ${s(fd, "phone")},
+      email = ${s(fd, "email")}, country = ${s(fd, "country")}, city = ${s(fd, "city")},
+      address = ${s(fd, "address")}, notes = ${s(fd, "notes")},
+      is_active = ${fd.get("is_active") === "off" ? false : true}
+    where id = ${id}
+  `;
+  // نام فروشنده در فاکتورها از تعریف تأمین‌کننده می‌آید
+  await sql`update invoices set supplier = ${name} where supplier_id = ${id}`;
+  await logAudit(me, "ویرایش", "supplier", id, `تأمین‌کننده ${name}`);
+  revalidatePath("/suppliers");
+  revalidatePath("/invoices");
+  return ok("تغییرات ذخیره شد");
+}
+
+export async function deleteSupplier(fd: FormData) {
+  const me = await requireAuth();
+  const id = Number(fd.get("id"));
+  const [{ n: used }] = await sql`select count(*)::int as n from invoices where supplier_id = ${id}`;
+  // تأمین‌کننده‌ای که فاکتور دارد حذف نمی‌شود، فقط غیرفعال می‌شود
+  if (Number(used) > 0) {
+    await sql`update suppliers set is_active = false where id = ${id}`;
+    const [sup] = await sql`select name from suppliers where id = ${id}`;
+    await logAudit(me, "ویرایش", "supplier", id, `${sup?.name ?? id} غیرفعال شد (${used} فاکتور دارد)`);
+  } else {
+    const [sup] = await sql`delete from suppliers where id = ${id} returning name`;
+    if (sup) await logAudit(me, "حذف", "supplier", id, `تأمین‌کننده ${sup.name}`);
+  }
+  revalidatePath("/suppliers");
+}
+
 /* ================= فاکتور ================= */
 
 export async function createInvoice(_prev: FormResult, fd: FormData): Promise<FormResult> {
@@ -249,9 +312,14 @@ export async function createInvoice(_prev: FormResult, fd: FormData): Promise<Fo
   const dup = await sql`select 1 from invoices where invoice_no = ${no}`;
   if (dup.length) return err(`فاکتور ${no} قبلاً ثبت شده است`);
 
+  const supplierId = Number(fd.get("supplier_id")) || null;
+  const supplierName = supplierId
+    ? String((await sql`select name from suppliers where id = ${supplierId}`)[0]?.name ?? "")
+    : null;
+
   const [row] = await sql`
-    insert into invoices (invoice_no, supplier, invoice_date, currency, total_amount, due_date, notes)
-    values (${no}, ${s(fd, "supplier")}, ${s(fd, "invoice_date")}, ${s(fd, "currency") ?? "RMB"},
+    insert into invoices (invoice_no, supplier_id, supplier, invoice_date, currency, total_amount, due_date, notes)
+    values (${no}, ${supplierId}, ${supplierName}, ${s(fd, "invoice_date")}, ${s(fd, "currency") ?? "RMB"},
             ${n(fd, "total_amount") ?? 0}, ${s(fd, "due_date")}, ${s(fd, "notes")})
     returning id
   `;
@@ -265,10 +333,15 @@ export async function updateInvoice(fd: FormData) {
   const me = await requireAuth();
   const id = Number(fd.get("id"));
   const no = s(fd, "invoice_no") ?? "";
+  const supplierId = Number(fd.get("supplier_id")) || null;
+  const supplierName = supplierId
+    ? String((await sql`select name from suppliers where id = ${supplierId}`)[0]?.name ?? "")
+    : null;
   await sql`
     update invoices set
       invoice_no   = ${no},
-      supplier     = ${s(fd, "supplier")},
+      supplier_id  = ${supplierId},
+      supplier     = ${supplierName},
       invoice_date = ${s(fd, "invoice_date")},
       currency     = ${s(fd, "currency") ?? "RMB"},
       total_amount = ${n(fd, "total_amount") ?? 0},

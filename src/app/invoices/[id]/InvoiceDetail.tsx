@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import type { Invoice, Item, Product } from "@/lib/queries";
+import type { Invoice, Item, Product, Supplier } from "@/lib/queries";
 import { money, qty as fq, jalali } from "@/lib/format";
 import {
   createAllocation,
@@ -361,13 +361,35 @@ export function ItemShipmentsCard({
 
 /* ---------- ویرایش فاکتور ---------- */
 
-export function InvoiceEditCard({ inv }: { inv: Invoice }) {
+export function InvoiceEditCard({
+  inv,
+  suppliers,
+}: {
+  inv: Invoice;
+  suppliers: Supplier[];
+}) {
+  const [supplierId, setSupplierId] = useState(inv.supplier_id ? String(inv.supplier_id) : "");
+  const active = suppliers.filter((s) => s.is_active || s.id === inv.supplier_id);
+
   return (
     <Card title="ویرایش فاکتور">
       <form action={updateInvoice} className="grid gap-4 p-4">
         <input type="hidden" name="id" value={inv.id} />
         <Input name="invoice_no" label="شماره فاکتور" defaultValue={inv.invoice_no} required dir="ltr" />
-        <Input name="supplier" label="فروشنده" defaultValue={inv.supplier ?? ""} />
+        <Combobox
+          label="تأمین‌کننده"
+          name="supplier_id"
+          placeholder={suppliers.length ? "جست‌وجو و انتخاب…" : "اول تأمین‌کننده تعریف کنید"}
+          emptyText="تأمین‌کننده‌ای پیدا نشد"
+          disabled={suppliers.length === 0}
+          options={active.map((s) => ({
+            value: String(s.id),
+            label: s.name,
+            hint: s.country ?? undefined,
+          }))}
+          value={supplierId}
+          onChange={setSupplierId}
+        />
         <DateInput name="invoice_date" label="تاریخ فاکتور" defaultValue={inv.invoice_date} />
         <SelectField name="currency" label="ارز" defaultValue={inv.currency ?? "RMB"} options={CURRENCIES} />
         <NumberInput name="total_amount" label="مبلغ کل فاکتور" defaultValue={inv.total_amount} />

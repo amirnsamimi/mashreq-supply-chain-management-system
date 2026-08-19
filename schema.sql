@@ -99,3 +99,20 @@ create table if not exists products (
 );
 alter table invoice_items add column if not exists product_id integer references products(id) on delete set null;
 create index if not exists idx_items_product on invoice_items(product_id);
+
+-- تأمین‌کنندگان (یک‌بار تعریف، استفاده در همه فاکتورها)
+create table if not exists suppliers (
+  id         serial primary key,
+  name       text not null unique,
+  contact    text,
+  phone      text,
+  email      text,
+  country    text,
+  city       text,
+  address    text,
+  notes      text,
+  is_active  boolean not null default true,
+  created_at timestamptz default now()
+);
+alter table invoices add column if not exists supplier_id integer references suppliers(id) on delete set null;
+create index if not exists idx_invoices_supplier on invoices(supplier_id);

@@ -35,8 +35,9 @@
   color-scheme: light;
 }
 
+/* حالت تیره: هم تنظیم سیستم، هم انتخاب دستی کاربر (data-theme) */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --geist-background: #000000;
     --geist-background-subtle: #0a0a0a;
     --geist-foreground: #ededed;
@@ -62,6 +63,31 @@
   }
 }
 
+:root[data-theme="dark"] {
+    --geist-background: #000000;
+    --geist-background-subtle: #0a0a0a;
+    --geist-foreground: #ededed;
+    --geist-gray-100: #1a1a1a;
+    --geist-gray-200: #1f1f1f;
+    --geist-gray-alpha: rgba(255, 255, 255, 0.09);
+    --geist-border: #2e2e2e;
+    --geist-border-strong: #454545;
+    --geist-secondary: #a1a1a1;
+    --geist-tertiary: #7d7d7d;
+
+    --geist-blue-lighter: #0f1b2d;
+    --geist-blue-text: #52a8ff;
+    --geist-red-lighter: #2a1314;
+    --geist-red-text: #ff6166;
+    --geist-amber-lighter: #2a1e0a;
+    --geist-amber-text: #f1a10d;
+    --geist-green-lighter: #0d2a17;
+    --geist-green-text: #62c073;
+    --geist-purple-lighter: #1f1030;
+    --geist-purple-text: #b18aff;
+    color-scheme: dark;
+}
+
 @theme inline {
   --color-bg: var(--geist-background);
   --color-bg-subtle: var(--geist-background-subtle);
@@ -74,10 +100,15 @@
 }
 
 /* ---------- پایه ---------- */
-html { -webkit-font-smoothing: antialiased; }
+html {
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
 
 body {
-  font-family: var(--font-geist-sans), Vazirmatn, system-ui, sans-serif;
+  max-width: 100vw;
+  overflow-x: hidden;
+  font-family: var(--font-vazirmatn), system-ui, sans-serif;
   background: var(--geist-background-subtle);
   color: var(--geist-foreground);
   letter-spacing: -0.011em;
@@ -88,17 +119,20 @@ body {
 /* ---------- فرم ---------- */
 input, select, textarea {
   width: 100%;
+  font-size: 16px;
   border-radius: var(--geist-radius);
   border: 1px solid var(--geist-border);
   background: var(--geist-background);
   color: var(--geist-foreground);
   padding: 0.5rem 0.625rem;
-  font-size: 0.875rem;
   line-height: 1.25rem;
   outline: none;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 input::placeholder, textarea::placeholder { color: var(--geist-tertiary); }
+@media (min-width: 640px) {
+  input, select, textarea { font-size: 0.875rem; }
+}
 input:hover, select:hover, textarea:hover { border-color: var(--geist-border-strong); }
 input:focus, select:focus, textarea:focus {
   border-color: var(--geist-foreground);
@@ -151,7 +185,7 @@ tfoot td {
 
 /* اعداد با فونت مونو و عرض ثابت */
 .num {
-  font-family: var(--font-geist-mono), var(--font-geist-sans), Vazirmatn, monospace;
+  font-family: var(--font-geist-mono), var(--font-vazirmatn), monospace;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0;
 }

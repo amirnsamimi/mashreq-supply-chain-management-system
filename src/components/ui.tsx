@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { logoutAction } from "@/lib/actions";
+import { ThemeToggle } from "./ThemeToggle";
 
 export function Nav({ active, user }: { active: string; user?: string }) {
   const links = [
@@ -10,29 +11,43 @@ export function Nav({ active, user }: { active: string; user?: string }) {
   ];
   return (
     <header className="sticky top-0 z-20 border-b border-[var(--geist-border)] bg-[var(--geist-background)]/85 backdrop-blur">
-      <div className="mx-auto flex max-w-[1400px] items-center gap-1 px-5 py-3">
-        <span className="ml-5 text-sm font-semibold tracking-tight">پیگیری فاکتور و ارسال</span>
-        {links.map((l) => (
-          <Link
-            key={l.href}
-            href={l.href}
-            className={`rounded-[var(--geist-radius)] px-3 py-1.5 text-sm transition ${
-              active === l.href
-                ? "bg-[var(--geist-gray-100)] font-medium text-[var(--geist-foreground)]"
-                : "text-[var(--geist-secondary)] hover:text-[var(--geist-foreground)]"
-            }`}
-          >
-            {l.label}
-          </Link>
-        ))}
-        <div className="mr-auto flex items-center gap-3">
-          {user && <span className="text-xs text-[var(--geist-secondary)]">{user}</span>}
-          <form action={logoutAction}>
-            <button className="text-xs text-[var(--geist-tertiary)] transition hover:text-[var(--geist-foreground)]">
-              خروج
-            </button>
-          </form>
+      <div className="mx-auto max-w-[1400px] px-4 sm:px-5">
+        {/* ردیف اول: عنوان، کاربر، تم، خروج */}
+        <div className="flex items-center gap-3 py-2.5">
+          <span className="truncate text-sm font-semibold tracking-tight">
+            پیگیری فاکتور و ارسال
+          </span>
+          <div className="mr-auto flex shrink-0 items-center gap-2 sm:gap-3">
+            {user && (
+              <span className="hidden text-xs text-[var(--geist-secondary)] sm:inline">
+                {user}
+              </span>
+            )}
+            <ThemeToggle />
+            <form action={logoutAction}>
+              <button className="text-xs text-[var(--geist-tertiary)] transition hover:text-[var(--geist-foreground)]">
+                خروج
+              </button>
+            </form>
+          </div>
         </div>
+
+        {/* ردیف دوم: منو — در موبایل قابل اسکرول افقی */}
+        <nav className="scroll-x -mx-4 flex items-center gap-1 px-4 pb-2 sm:mx-0 sm:px-0">
+          {links.map((l) => (
+            <Link
+              key={l.href}
+              href={l.href}
+              className={`shrink-0 rounded-[var(--geist-radius)] px-3 py-1.5 text-sm transition ${
+                active === l.href
+                  ? "bg-[var(--geist-gray-100)] font-medium text-[var(--geist-foreground)]"
+                  : "text-[var(--geist-secondary)] hover:text-[var(--geist-foreground)]"
+              }`}
+            >
+              {l.label}
+            </Link>
+          ))}
+        </nav>
       </div>
     </header>
   );
@@ -54,10 +69,10 @@ export function Page({
   return (
     <>
       <Nav active={active} user={user} />
-      <main className="mx-auto max-w-[1400px] px-5 py-7">
-        <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-          <div className="flex items-center gap-2">{action}</div>
+      <main className="mx-auto max-w-[1400px] px-4 py-6 sm:px-5 sm:py-7">
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-3 sm:mb-6">
+          <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h1>
+          <div className="flex w-full items-center gap-2 sm:w-auto">{action}</div>
         </div>
         {children}
       </main>
@@ -110,7 +125,7 @@ export function Stat({
   return (
     <div className="rounded-[var(--geist-radius-lg)] border border-[var(--geist-border)] bg-[var(--geist-background)] p-4">
       <div className="text-xs text-[var(--geist-secondary)]">{label}</div>
-      <div className={`num mt-1.5 text-[1.65rem] font-semibold tracking-tight ${tones[tone]}`}>
+      <div className={`num mt-1.5 text-2xl font-semibold tracking-tight sm:text-[1.65rem] ${tones[tone]}`}>
         {value}
       </div>
       {hint && <div className="mt-1 text-xs text-[var(--geist-tertiary)]">{hint}</div>}

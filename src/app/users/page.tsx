@@ -70,7 +70,7 @@ export default async function UsersPage() {
                           <summary className="cursor-pointer text-xs text-[var(--geist-tertiary)] transition hover:text-[var(--geist-foreground)]">
                             ویرایش
                           </summary>
-                          <div className="absolute z-10 mt-2 w-64 rounded-[var(--geist-radius-lg)] border border-[var(--geist-border)] bg-[var(--geist-background)] p-3 shadow-[var(--geist-shadow)]">
+                          <div className="absolute left-0 z-10 mt-2 w-[min(16rem,calc(100vw-3rem))] rounded-[var(--geist-radius-lg)] border border-[var(--geist-border)] bg-[var(--geist-background)] p-3 shadow-[var(--geist-shadow)]">
                             <form action={updateUser} className="grid gap-2">
                               <input type="hidden" name="id" value={String(u.id)} />
                               <Field label="نام">

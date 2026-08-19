@@ -64,7 +64,7 @@ export default async function InvoicePage({
         <Stat label={`مبلغ کل (${cur})`} value={money(inv.total_amount)} />
         <Stat label={`جمع مبلغ اقلام (${cur})`} value={money(inv.items_total)} hint={`${items.length} قلم`} />
         <Stat
-          label="اختلاف فاکتور و اقلام"
+          label={`اختلاف فاکتور و اقلام (${cur})`}
           value={money(inv.diff)}
           tone={Math.abs(inv.diff) > 0.01 ? "warn" : "good"}
         />
@@ -120,7 +120,7 @@ export default async function InvoicePage({
                           <summary className="cursor-pointer text-xs text-[var(--geist-tertiary)] hover:text-[var(--geist-foreground)]">
                             ویرایش
                           </summary>
-                          <div className="absolute z-10 mt-2 w-72 rounded-[var(--geist-radius-lg)] border border-[var(--geist-border)] bg-[var(--geist-background)] p-3 shadow-[var(--geist-shadow)]">
+                          <div className="absolute left-0 z-10 mt-2 w-[min(18rem,calc(100vw-3rem))] rounded-[var(--geist-radius-lg)] border border-[var(--geist-border)] bg-[var(--geist-background)] p-3 shadow-[var(--geist-shadow)]">
                             <form action={updateItem} className="grid gap-2">
                               <input type="hidden" name="id" value={it.id} />
                               <input type="hidden" name="invoice_id" value={id} />

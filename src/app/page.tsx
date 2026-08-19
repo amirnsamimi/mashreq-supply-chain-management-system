@@ -1,113 +1,124 @@
 import Link from "next/link";
 import { requireAuth } from "@/lib/auth";
-import { dashboard, listInvoices, listShipments } from "@/lib/queries";
-import { money, jalali } from "@/lib/format";
+import { listInvoices, listShipments } from "@/lib/queries";
+import { listNotifications } from "@/lib/notifications";
+import { money } from "@/lib/format";
 import { Page } from "@/components/Nav";
-import { Badge, Card, Empty, Stat } from "@/components/geist";
+import { DateText } from "@/components/DateText";
+import { Badge, Button, Card, Empty, Stat } from "@/components/geist";
 import { statusTone } from "@/lib/tones";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
   const me = await requireAuth();
-  const d = await dashboard();
   const invoices = await listInvoices();
   const shipments = await listShipments();
+  const notifications = await listNotifications();
 
-  const attention = invoices
-    .filter((i) => i.payment_status === "سررسید گذشته" || Math.abs(i.diff) > 0.01)
-    .slice(0, 8);
-  const activeShipments = shipments.filter((s) => s.status !== "تحویل‌شده").slice(0, 8);
+  /* داشبورد = کارهایی که امروز باید انجام شوند، نه آمار کلی */
+  const overdue = invoices.filter((i) => i.payment_status === "سررسید گذشته");
+  const dueSoon = invoices.filter((i) => {
+    if (i.balance <= 0.005 || !i.due_date) return false;
+    const days = Math.round(
+      (new Date(i.due_date).getTime() - new Date(new Date().toISOString().slice(0, 10)).getTime()) /
+        86_400_000
+    );
+    return days >= 0 && days <= 7;
+  });
+  const mismatched = invoices.filter((i) => Math.abs(i.diff) > 0.01);
+  const inTransit = shipments.filter((s) => s.status === "در مسیر");
+  const atCarrier = shipments.filter((s) => s.status === "تحویل به کارگو");
+  const shortReceipt = shipments.filter(
+    (s) => s.receive_date && s.received_qty < s.total_qty - 0.0005
+  );
+  const unread = notifications.filter((n) => !n.read_at);
+
+  const attention = [
+    ...overdue.map((i) => ({ i, why: "سررسید گذشته" as const })),
+    ...dueSoon.map((i) => ({ i, why: "سررسید نزدیک" as const })),
+    ...mismatched
+      .filter((i) => !overdue.includes(i) && !dueSoon.includes(i))
+      .map((i) => ({ i, why: "اختلاف مبلغ" as const })),
+  ].slice(0, 10);
 
   return (
-    <Page active="/"
-      user={`${me.first_name} ${me.last_name}`} title="داشبورد">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <Stat label="فاکتورها" value={d.invoices} hint={`${d.openInvoices} باز`} />
-        <Stat label="اقلام کالا" value={d.items} />
-        <Stat label="پارت‌های ارسال" value={d.shipments} />
-        <Stat label="تحویل به کارگو" value={d.atCarrier} />
-        <Stat label="در مسیر" value={d.inTransit} />
-        <Stat label="تحویل‌شده" value={d.delivered} tone="good" />
+    <Page
+      active="/"
+      title="داشبورد"
+      user={`${me.first_name} ${me.last_name}`}
+      action={
+        <Link href="/reports">
+          <Button>گزارش‌ها و نمودارها</Button>
+        </Link>
+      }
+    >
+      {/* شمارنده‌های اقدام‌محور */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <Stat
+          label="سررسید گذشته"
+          value={overdue.length}
+          tone={overdue.length ? "warn" : "good"}
+          hint={overdue.length ? "همین امروز پیگیری کنید" : "چیزی معوق نیست"}
+        />
+        <Stat label="سررسید تا ۷ روز آینده" value={dueSoon.length} />
+        <Stat
+          label="اختلاف مبلغ فاکتور و اقلام"
+          value={mismatched.length}
+          tone={mismatched.length ? "warn" : "good"}
+        />
+        <Stat label="پارت در مسیر" value={inTransit.length} hint={`${atCarrier.length} نزد کارگو`} />
+        <Stat
+          label="مغایرت در تحویل"
+          value={shortReceipt.length}
+          tone={shortReceipt.length ? "warn" : "good"}
+        />
       </div>
 
-      {/* مبالغ به تفکیک ارز */}
-      <div className="mt-4">
-        <Card title="مبالغ به تفکیک ارز">
-          {d.currencies.length === 0 ? (
-            <Empty title="هنوز فاکتوری ثبت نشده است" />
-          ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th>ارز</th>
-                  <th>مبلغ کل فاکتورها</th>
-                  <th>جمع پرداختی</th>
-                  <th>مانده بدهی</th>
-                </tr>
-              </thead>
-              <tbody>
-                {d.currencies.map((c) => (
-                  <tr key={c.currency}>
-                    <td className="font-medium">{c.currency}</td>
-                    <td className="num">{money(c.total)}</td>
-                    <td className="num text-[var(--geist-green-text)]">{money(c.paid)}</td>
-                    <td
-                      className={`num font-medium ${
-                        c.balance > 0 ? "text-[var(--geist-red-text)]" : ""
-                      }`}
-                    >
-                      {money(c.balance)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-          <div className="border-t border-[var(--geist-border)] px-4 py-2.5 text-xs text-[var(--geist-tertiary)]">
-            جمع هزینه حمل همه پارت‌ها: <span className="num">{money(d.freight)}</span>
-            {d.overdue > 0 && ` — ${d.overdue} فاکتور سررسید گذشته`}
-          </div>
-        </Card>
-      </div>
-
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <Card title="نیازمند بررسی">
+      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+        {/* نیازمند اقدام */}
+        <Card
+          title={`نیازمند پیگیری (${attention.length})`}
+          action={
+            <Link href="/invoices" className="text-xs text-[var(--geist-secondary)] hover:underline">
+              همه فاکتورها
+            </Link>
+          }
+        >
           {attention.length === 0 ? (
-            <Empty title="موردی نیست" />
+            <Empty title="همه‌چیز مرتب است">فاکتور معوق یا مغایرتی وجود ندارد</Empty>
           ) : (
             <div className="scroll-x">
               <table>
                 <thead>
                   <tr>
                     <th>فاکتور</th>
+                    <th>تأمین‌کننده</th>
                     <th>مانده</th>
-                    <th>اختلاف با اقلام</th>
-                    <th>وضعیت</th>
+                    <th>سررسید</th>
+                    <th>دلیل</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {attention.map((i) => (
-                    <tr key={i.id}>
+                  {attention.map(({ i, why }) => (
+                    <tr key={`${i.id}-${why}`}>
                       <td>
                         <Link href={`/invoices/${i.id}`} className="font-medium hover:underline">
                           {i.invoice_no}
                         </Link>
                       </td>
+                      <td className="max-w-40 truncate">{i.supplier ?? "—"}</td>
                       <td className="num">
-                        {money(i.balance)} <span className="text-[var(--geist-tertiary)]">{i.currency}</span>
-                      </td>
-                      <td
-                        className={`num ${
-                          Math.abs(i.diff) > 0.01
-                            ? "text-[var(--geist-red-text)] font-medium"
-                            : "text-[var(--geist-tertiary)]"
-                        }`}
-                      >
-                        {money(i.diff)}
+                        {money(i.balance)}{" "}
+                        <span className="text-[var(--geist-tertiary)]">{i.currency}</span>
                       </td>
                       <td>
-                        <Badge tone={statusTone(i.payment_status)}>{i.payment_status}</Badge>
+                        <DateText value={i.due_date} />
+                      </td>
+                      <td>
+                        <Badge tone={why === "سررسید گذشته" ? "red" : why === "سررسید نزدیک" ? "amber" : "blue"}>
+                          {why}
+                        </Badge>
                       </td>
                     </tr>
                   ))}
@@ -117,9 +128,17 @@ export default async function Home() {
           )}
         </Card>
 
-        <Card title="پارت‌های در جریان">
-          {activeShipments.length === 0 ? (
-            <Empty title="موردی نیست" />
+        {/* پارت‌های در جریان */}
+        <Card
+          title={`پارت‌های در جریان (${inTransit.length + atCarrier.length})`}
+          action={
+            <Link href="/shipments" className="text-xs text-[var(--geist-secondary)] hover:underline">
+              همه پارت‌ها
+            </Link>
+          }
+        >
+          {inTransit.length + atCarrier.length === 0 ? (
+            <Empty title="پارتی در راه نیست" />
           ) : (
             <div className="scroll-x">
               <table>
@@ -133,16 +152,20 @@ export default async function Home() {
                   </tr>
                 </thead>
                 <tbody>
-                  {activeShipments.map((s) => (
+                  {[...inTransit, ...atCarrier].slice(0, 10).map((s) => (
                     <tr key={s.id}>
                       <td>
                         <Link href={`/shipments/${s.id}`} className="font-medium hover:underline">
                           {s.shipment_no}
                         </Link>
                       </td>
-                      <td className="text-[var(--geist-secondary)]">{s.invoice_nos || "—"}</td>
+                      <td className="max-w-32 truncate text-[var(--geist-secondary)]">
+                        {s.invoice_nos || "—"}
+                      </td>
                       <td>{s.carrier ?? "—"}</td>
-                      <td>{jalali(s.handover_date)}</td>
+                      <td>
+                        <DateText value={s.handover_date} />
+                      </td>
                       <td>
                         <Badge tone={statusTone(s.status)}>{s.status}</Badge>
                       </td>
@@ -151,6 +174,47 @@ export default async function Home() {
                 </tbody>
               </table>
             </div>
+          )}
+        </Card>
+      </div>
+
+      {/* آخرین اعلان‌ها */}
+      <div className="mt-4">
+        <Card
+          title={`اعلان‌های خوانده‌نشده (${unread.length})`}
+          action={
+            <Link href="/notifications" className="text-xs text-[var(--geist-secondary)] hover:underline">
+              همه اعلان‌ها
+            </Link>
+          }
+        >
+          {unread.length === 0 ? (
+            <Empty title="اعلان خوانده‌نشده‌ای ندارید">
+              با ساخت قالب در «اعلان‌ها» می‌توانید یادآوری‌های خودکار بسازید
+            </Empty>
+          ) : (
+            <ul className="divide-y divide-[var(--geist-border)]">
+              {unread.slice(0, 6).map((n) => (
+                <li key={n.id} className="flex flex-wrap items-center gap-2 px-4 py-2.5 text-sm">
+                  <Badge tone={n.severity === "critical" ? "red" : n.severity === "warning" ? "amber" : "blue"} dot>
+                    {n.severity === "critical" ? "بحرانی" : n.severity === "warning" ? "هشدار" : "اطلاع"}
+                  </Badge>
+                  {n.target_id ? (
+                    <Link
+                      href={n.target === "invoice" ? `/invoices/${n.target_id}` : `/shipments/${n.target_id}`}
+                      className="hover:underline"
+                    >
+                      {n.title}
+                    </Link>
+                  ) : (
+                    <span>{n.title}</span>
+                  )}
+                  <span className="mr-auto text-xs text-[var(--geist-tertiary)]">
+                    <DateText value={n.created_at} withTime />
+                  </span>
+                </li>
+              ))}
+            </ul>
           )}
         </Card>
       </div>

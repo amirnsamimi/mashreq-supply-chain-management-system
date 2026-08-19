@@ -116,3 +116,43 @@ create table if not exists suppliers (
 );
 alter table invoices add column if not exists supplier_id integer references suppliers(id) on delete set null;
 create index if not exists idx_invoices_supplier on invoices(supplier_id);
+-- قالب‌های اعلان که کاربر خودش می‌سازد
+create table if not exists notification_rules (
+  id             serial primary key,
+  name           text not null,
+  target         text not null,              -- invoice | shipment
+  trigger_type   text not null,              -- نوع شرط
+  offset_days    integer,                    -- برای شرط‌های تاریخ‌محور
+  match_status   text,                       -- برای شرط‌های وضعیت‌محور
+  severity       text not null default 'info', -- info | warning | critical
+  title_template text not null,
+  body_template  text not null,
+  is_active      boolean not null default true,
+  created_at     timestamptz default now(),
+  created_by     integer references users(id) on delete set null
+);
+
+-- اعلان‌های تولیدشده
+create table if not exists notifications (
+  id           bigserial primary key,
+  rule_id      integer references notification_rules(id) on delete cascade,
+  rule_name    text not null,
+  target       text not null,
+  target_id    integer,
+  dedupe_key   text not null unique,          -- جلوی تکرار یک اعلان را می‌گیرد
+  severity     text not null default 'info',
+  title        text not null,
+  body         text not null,
+  created_at   timestamptz not null default now(),
+  read_at      timestamptz,
+  dismissed_at timestamptz
+);
+create index if not exists idx_notif_created on notifications(created_at desc);
+create index if not exists idx_notif_open on notifications(dismissed_at, read_at);
+
+-- وضعیت‌های کوچک برنامه (مثلاً آخرین اجرای موتور اعلان)
+create table if not exists app_state (
+  key        text primary key,
+  value      text,
+  updated_at timestamptz not null default now()
+);

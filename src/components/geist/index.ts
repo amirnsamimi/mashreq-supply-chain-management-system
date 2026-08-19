@@ -7,4 +7,5 @@ export * from "./DataTable";
 export * from "./Combobox";
 export * from "./SelectField";
 export * from "./DateInput";
+export * from "./Chart";
 export * from "./NumberInput";

@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { useState } from "react";
 import type { Invoice, Supplier } from "@/lib/queries";
-import { money, jalali } from "@/lib/format";
+import { money } from "@/lib/format";
 import { createInvoice } from "@/lib/actions";
 import { CURRENCIES } from "@/lib/lists";
 import { ActionForm, Submit } from "@/components/ActionForm";
 import { Badge, Button, Card, Combobox, DataTable, DateInput, Input, Modal, NumberInput, SelectField } from "@/components/geist";
 import type { Column } from "@/components/geist/DataTable";
 import { statusTone } from "@/lib/tones";
+import { DateText } from "@/components/DateText";
 
 export function InvoicesClient({
   invoices,
@@ -33,7 +34,7 @@ export function InvoicesClient({
       total: (rows) => `جمع ${rows.length} فاکتور`,
     },
     { key: "supplier", header: "فروشنده", value: (r) => r.supplier },
-    { key: "invoice_date", header: "تاریخ", value: (r) => r.invoice_date, render: (r) => jalali(r.invoice_date) },
+    { key: "invoice_date", header: "تاریخ", value: (r) => r.invoice_date, render: (r) => <DateText value={r.invoice_date} /> },
     { key: "currency", header: "ارز", value: (r) => r.currency },
     {
       key: "total_amount",
@@ -80,7 +81,7 @@ export function InvoicesClient({
       render: (r) => <span className="num font-medium">{money(r.balance)}</span>,
       total: (rows) => <span className="num">{money(rows.reduce((s, r) => s + r.balance, 0))}</span>,
     },
-    { key: "due_date", header: "سررسید", value: (r) => r.due_date, render: (r) => jalali(r.due_date) },
+    { key: "due_date", header: "سررسید", value: (r) => r.due_date, render: (r) => <DateText value={r.due_date} /> },
     {
       key: "payment_status",
       header: "وضعیت پرداخت",

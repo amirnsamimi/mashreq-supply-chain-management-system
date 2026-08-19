@@ -13,6 +13,8 @@ export function SelectField({
   label,
   options,
   defaultValue = "",
+  value: controlled,
+  onChange,
   placeholder = "انتخاب کنید…",
   required,
   disabled,
@@ -22,6 +24,9 @@ export function SelectField({
 }: {
   name: string;
   label?: string;
+  /** برای حالت کنترل‌شده — با onChange بیاید */
+  value?: string;
+  onChange?: (v: string) => void;
   options: string[] | { value: string; label: string }[];
   defaultValue?: string;
   placeholder?: string;
@@ -31,7 +36,12 @@ export function SelectField({
   allowEmpty?: boolean;
   emptyLabel?: string;
 }) {
-  const [value, setValue] = useState(defaultValue);
+  const [inner, setInner] = useState(defaultValue);
+  const value = controlled ?? inner;
+  const change = (v: string) => {
+    if (controlled === undefined) setInner(v);
+    onChange?.(v);
+  };
   const normalized = options.map((o) =>
     typeof o === "string" ? { value: o, label: o } : o
   );
@@ -43,7 +53,7 @@ export function SelectField({
       label={label}
       options={list}
       value={value}
-      onChange={setValue}
+      onChange={change}
       placeholder={placeholder}
       required={required}
       disabled={disabled}

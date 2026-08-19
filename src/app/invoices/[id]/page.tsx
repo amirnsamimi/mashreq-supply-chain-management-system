@@ -17,6 +17,7 @@ import { Badge, Card, Stat } from "@/components/geist";
 import { statusTone } from "@/lib/tones";
 import { InvoiceEditCard, ItemShipmentsCard, ItemsCard } from "./InvoiceDetail";
 import { InvoicePaymentsCard } from "./InvoicePayments";
+import { DateText } from "@/components/DateText";
 
 export const dynamic = "force-dynamic";
 
@@ -76,7 +77,7 @@ export default async function InvoicePage({
           label={`جمع پرداختی (${cur})`}
           value={money(inv.paid)}
           tone="good"
-          hint={inv.last_payment_date ? `آخرین: ${jalali(inv.last_payment_date)}` : undefined}
+          hint={inv.last_payment_date ? `آخرین: ${<DateText value={inv.last_payment_date} />}` : undefined}
         />
         <Stat
           label={`مانده (${cur})`}
@@ -123,7 +124,7 @@ export default async function InvoicePage({
                   <Badge tone={statusTone(h.action)}>{h.action}</Badge>
                   <span>{h.summary}</span>
                   <span className="mr-auto text-xs text-[var(--geist-tertiary)]">
-                    {h.user_name} — {jalali(h.created_at)}
+                    {h.user_name} — <DateText value={h.created_at} withTime />
                   </span>
                 </li>
               ))}

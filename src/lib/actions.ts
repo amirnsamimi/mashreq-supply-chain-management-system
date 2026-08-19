@@ -14,6 +14,7 @@ import {
   verifyPassword,
 } from "./auth";
 import { money } from "./format";
+import { runRules, TRIGGERS } from "./notifications";
 
 /** نتیجهٔ یکنواخت فرم‌ها: پیام خطا یا موفقیت */
 export type FormResult = { error?: string; ok?: string } | null;
@@ -638,4 +639,143 @@ export async function deleteAllocation(fd: FormData) {
   if (row) await logAudit(me, "حذف", "allocation", id, `تخصیص ${row.qty_shipped} عدد`);
   revalidatePath(`/shipments/${Number(fd.get("shipment_id"))}`);
   revalidatePath("/invoices");
+}
+
+/* ================= قالب‌های اعلان ================= */
+
+function ruleFields(fd: FormData) {
+  return {
+    name: s(fd, "name"),
+    target: s(fd, "target") ?? "invoice",
+    trigger_type: s(fd, "trigger_type") ?? "",
+    offset_days: n(fd, "offset_days"),
+    match_status: s(fd, "match_status"),
+    severity: s(fd, "severity") ?? "info",
+    title_template: s(fd, "title_template"),
+    body_template: s(fd, "body_template"),
+  };
+}
+
+function validateRule(f: ReturnType<typeof ruleFields>): string | null {
+  if (!f.name) return "نام قالب لازم است";
+  if (!f.trigger_type) return "نوع شرط را انتخاب کنید";
+  if (!f.title_template) return "عنوان اعلان لازم است";
+  if (!f.body_template) return "متن اعلان لازم است";
+
+  const spec = TRIGGERS[f.trigger_type];
+  if (!spec) return "نوع شرط نامعتبر است";
+  if (spec.target !== f.target) return "این شرط با نوع انتخاب‌شده جور نیست";
+  if (spec.needsDays && (f.offset_days === null || f.offset_days < 0)) {
+    return "تعداد روز را وارد کنید";
+  }
+  if (spec.needsStatus && !f.match_status) return "وضعیت موردنظر را انتخاب کنید";
+  return null;
+}
+
+export async function createRule(_prev: FormResult, fd: FormData): Promise<FormResult> {
+  const me = await requireAuth();
+  const f = ruleFields(fd);
+  const problem = validateRule(f);
+  if (problem) return err(problem);
+
+  const [row] = await sql`
+    insert into notification_rules
+      (name, target, trigger_type, offset_days, match_status, severity, title_template, body_template, created_by)
+    values (${f.name}, ${f.target}, ${f.trigger_type}, ${f.offset_days}, ${f.match_status},
+            ${f.severity}, ${f.title_template}, ${f.body_template}, ${me.id})
+    returning id
+  `;
+  await logAudit(me, "ایجاد", "rule", Number(row.id), `قالب اعلان «${f.name}»`);
+  revalidatePath("/notifications/rules");
+  return ok(`قالب «${f.name}» ساخته شد`);
+}
+
+export async function updateRule(_prev: FormResult, fd: FormData): Promise<FormResult> {
+  const me = await requireAuth();
+  const id = Number(fd.get("id"));
+  const f = ruleFields(fd);
+  const problem = validateRule(f);
+  if (problem) return err(problem);
+
+  await sql`
+    update notification_rules set
+      name = ${f.name}, target = ${f.target}, trigger_type = ${f.trigger_type},
+      offset_days = ${f.offset_days}, match_status = ${f.match_status},
+      severity = ${f.severity}, title_template = ${f.title_template},
+      body_template = ${f.body_template},
+      is_active = ${fd.get("is_active") === "off" ? false : true}
+    where id = ${id}
+  `;
+  await logAudit(me, "ویرایش", "rule", id, `قالب اعلان «${f.name}»`);
+  revalidatePath("/notifications/rules");
+  return ok("تغییرات ذخیره شد");
+}
+
+export async function toggleRule(fd: FormData) {
+  const me = await requireAuth();
+  const id = Number(fd.get("id"));
+  const [row] = await sql`
+    update notification_rules set is_active = not is_active where id = ${id}
+    returning name, is_active
+  `;
+  if (row) {
+    await logAudit(me, "ویرایش", "rule", id, `«${row.name}» ${row.is_active ? "فعال" : "غیرفعال"} شد`);
+  }
+  revalidatePath("/notifications/rules");
+}
+
+export async function deleteRule(fd: FormData) {
+  const me = await requireAuth();
+  const id = Number(fd.get("id"));
+  const [row] = await sql`delete from notification_rules where id = ${id} returning name`;
+  if (row) await logAudit(me, "حذف", "rule", id, `قالب اعلان «${row.name}» و اعلان‌هایش`);
+  revalidatePath("/notifications/rules");
+  revalidatePath("/notifications");
+}
+
+/* ================= اعلان‌ها ================= */
+
+export async function runRulesNow(): Promise<FormResult> {
+  await requireAuth();
+  const result = await runRules();
+  revalidatePath("/notifications");
+  revalidatePath("/", "layout");
+  return ok(
+    result.created > 0
+      ? `${result.created} اعلان تازه ساخته شد`
+      : "بررسی شد؛ اعلان تازه‌ای نبود"
+  );
+}
+
+export async function markRead(fd: FormData) {
+  await requireAuth();
+  const id = Number(fd.get("id"));
+  await sql`update notifications set read_at = now() where id = ${id} and read_at is null`;
+  revalidatePath("/notifications");
+  revalidatePath("/", "layout");
+}
+
+export async function markAllRead() {
+  await requireAuth();
+  await sql`update notifications set read_at = now() where read_at is null and dismissed_at is null`;
+  revalidatePath("/notifications");
+  revalidatePath("/", "layout");
+}
+
+export async function dismissNotification(fd: FormData) {
+  await requireAuth();
+  const id = Number(fd.get("id"));
+  await sql`update notifications set dismissed_at = now(), read_at = coalesce(read_at, now()) where id = ${id}`;
+  revalidatePath("/notifications");
+  revalidatePath("/", "layout");
+}
+
+export async function dismissAll() {
+  await requireAuth();
+  await sql`
+    update notifications set dismissed_at = now(), read_at = coalesce(read_at, now())
+    where dismissed_at is null
+  `;
+  revalidatePath("/notifications");
+  revalidatePath("/", "layout");
 }

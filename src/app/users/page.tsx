@@ -1,10 +1,10 @@
 import { requireAuth } from "@/lib/auth";
 import { sql } from "@/lib/db";
-import { jalali } from "@/lib/format";
 import { deleteUser, toggleUserActive } from "@/lib/actions";
 import { Page } from "@/components/Nav";
 import { Badge, Button, Card, Empty, Note } from "@/components/geist";
 import { statusTone } from "@/lib/tones";
+import { DateText } from "@/components/DateText";
 import {
   ChangeOwnPasswordCard,
   EditUserButton,
@@ -66,7 +66,7 @@ export default async function UsersPage() {
                       <td>
                         <Badge tone={statusTone(status)}>{status}</Badge>
                       </td>
-                      <td>{jalali(String(u.created_at))}</td>
+                      <td>{<DateText value={String(u.created_at)} />}</td>
                       <td>
                         <div className="flex items-center gap-1">
                           <EditUserButton id={id} first={first} last={last} phone={String(u.phone)} />

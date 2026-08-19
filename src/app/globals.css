@@ -200,6 +200,39 @@ body {
   border-radius: 4px;
 }
 
+/* منوی بالا اسکرول می‌شود ولی نوار اسکرولش دیده نشود */
+.scroll-hidden {
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scroll-hidden::-webkit-scrollbar { display: none; }
+
+/* ---------- تقویم نمایش ---------- */
+/* پیش‌فرض شمسی؛ با data-calendar روی <html> عوض می‌شود */
+.cal-gregorian { display: none; }
+html[data-calendar="gregorian"] .cal-jalali { display: none; }
+html[data-calendar="gregorian"] .cal-gregorian { display: inline; }
+
+/* ---------- نوار ثابت و ارتفاع واقعی نمایشگر ---------- */
+:root { --nav-h: 96px; }
+
+body {
+  /* dvh ارتفاع واقعی را می‌دهد، حتی وقتی نوار آدرس مرورگر موبایل باز و بسته می‌شود */
+  min-height: 100dvh;
+  padding-top: var(--nav-h);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.app-nav {
+  position: fixed;
+  inset-inline: 0;
+  top: 0;
+  z-index: 30;
+  padding-top: env(safe-area-inset-top);
+  padding-inline: max(0px, env(safe-area-inset-left)) max(0px, env(safe-area-inset-right));
+}
+
 @keyframes geist-spinner {
   0% { opacity: 1; }
   100% { opacity: 0.15; }

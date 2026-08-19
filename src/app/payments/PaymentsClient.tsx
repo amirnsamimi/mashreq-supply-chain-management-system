@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import type { Invoice, PaymentRow } from "@/lib/queries";
-import { jalali, money } from "@/lib/format";
+import { money } from "@/lib/format";
 import { createPayment, deletePayment } from "@/lib/actions";
 import { PAY_METHODS } from "@/lib/lists";
 import { ActionForm, Submit } from "@/components/ActionForm";
@@ -22,6 +22,7 @@ import {
 } from "@/components/geist";
 import type { Column } from "@/components/geist/DataTable";
 import { statusTone } from "@/lib/tones";
+import { DateText } from "@/components/DateText";
 
 export function PaymentsClient({
   payments,
@@ -37,7 +38,7 @@ export function PaymentsClient({
       key: "payment_date",
       header: "تاریخ پرداخت",
       value: (r) => r.payment_date,
-      render: (r) => jalali(r.payment_date),
+      render: (r) => <DateText value={r.payment_date} />,
       total: (rows) => `${rows.length} پرداخت`,
     },
     {

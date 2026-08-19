@@ -28,6 +28,7 @@ import {
   Textarea,
 } from "@/components/geist";
 import { statusTone } from "@/lib/tones";
+import { DateText } from "@/components/DateText";
 
 export type ShipmentOption = { id: number; shipment_no: string; carrier: string | null; status: string };
 export type ItemAlloc = {
@@ -349,7 +350,7 @@ export function ItemShipmentsCard({
                 >
                   {fq(a.qty_shipped - a.qty_received)}
                 </td>
-                <td>{jalali(a.receive_date)}</td>
+                <td>{<DateText value={a.receive_date} />}</td>
               </tr>
             ))}
           </tbody>

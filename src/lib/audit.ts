@@ -11,6 +11,7 @@ export const ENTITIES = {
   payment: "پرداخت",
   product: "کالا",
   supplier: "تأمین‌کننده",
+  rule: "قالب اعلان",
   user: "کاربر",
   import: "ورود داده",
 } as const;

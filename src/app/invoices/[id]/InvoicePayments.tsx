@@ -4,6 +4,7 @@ import Link from "next/link";
 import { jalali, money } from "@/lib/format";
 import { deletePayment } from "@/lib/actions";
 import { Button, Card, Empty } from "@/components/geist";
+import { DateText } from "@/components/DateText";
 
 type Payment = {
   id: number;
@@ -61,7 +62,7 @@ export function InvoicePaymentsCard({
             <tbody>
               {payments.map((p) => (
                 <tr key={p.id}>
-                  <td>{jalali(p.payment_date)}</td>
+                  <td>{<DateText value={p.payment_date} />}</td>
                   <td className="num font-medium">{money(p.amount)}</td>
                   <td>{p.method ?? "—"}</td>
                   <td>{p.reference ?? "—"}</td>

@@ -5,6 +5,7 @@ import { Badge, DataTable } from "@/components/geist";
 import type { Column } from "@/components/geist/DataTable";
 import { statusTone } from "@/lib/tones";
 import { jalali } from "@/lib/format";
+import { DateText } from "@/components/DateText";
 
 type Row = {
   id: number;
@@ -24,10 +25,6 @@ const hrefFor = (entity: string, id: number | null) => {
   return null;
 };
 
-function time(iso: string) {
-  const d = new Date(iso);
-  return new Intl.DateTimeFormat("fa-IR", { hour: "2-digit", minute: "2-digit" }).format(d);
-}
 
 export function HistoryTable({ rows }: { rows: Row[] }) {
   const columns: Column<Row>[] = [
@@ -37,7 +34,7 @@ export function HistoryTable({ rows }: { rows: Row[] }) {
       value: (r) => r.created_at,
       render: (r) => (
         <span className="whitespace-nowrap">
-          {jalali(r.created_at)} <span className="text-[var(--geist-tertiary)]">{time(r.created_at)}</span>
+          <DateText value={r.created_at} withTime />
         </span>
       ),
     },

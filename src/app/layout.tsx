@@ -19,6 +19,8 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 5,
+  // تا صفحه زیر نوارهای مرورگر و ناحیه امن هم کشیده شود
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -35,7 +37,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "try{var t=localStorage.getItem('khanum-theme');if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t)}catch(e){}",
+              "try{var d=document.documentElement;" +
+              "var t=localStorage.getItem('khanum-theme');if(t==='dark'||t==='light')d.setAttribute('data-theme',t);" +
+              "var c=localStorage.getItem('khanum-calendar');if(c==='gregorian'||c==='jalali')d.setAttribute('data-calendar',c);" +
+              "}catch(e){}",
           }}
         />
       </head>

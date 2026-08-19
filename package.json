@@ -1,7 +1,6 @@
 {
-  "name": "app",
-  "version": "0.1.0",
-  "private": true,
+  "name": "mashreq-supply-chain-management-system",
+  "version": "1.0.0",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -23,5 +22,11 @@
     "@types/react-dom": "^19",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "description": "Track import invoices, suppliers, products, multi-part shipments, and payments — with automatic landed-cost allocation.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/amirnsamimi/mashreq-supply-chain-management-system.git"
   }
 }

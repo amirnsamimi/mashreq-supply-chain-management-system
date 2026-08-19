@@ -208,7 +208,7 @@ export async function runRules(): Promise<{ created: number; checked: number }> 
   return { created, checked: pending.length };
 }
 
-/** موتور را حداکثر هر ۱۰ دقیقه یک‌بار اجرا می‌کند */
+/** موتور را حداکثر هر 10 دقیقه یک‌بار اجرا می‌کند */
 export async function runRulesThrottled(minMinutes = 10) {
   const [state] = await sql`select value from app_state where key = 'notif_last_run'`;
   if (state?.value) {

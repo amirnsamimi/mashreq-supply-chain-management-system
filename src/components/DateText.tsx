@@ -1,7 +1,5 @@
 import { isoToJalaliString } from "@/lib/jalali";
 
-const faDigits = (s: string) => s.replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)]);
-
 /**
  * تاریخ را هم‌زمان به شمسی و میلادی در DOM می‌گذارد و با CSS
  * فقط یکی را نشان می‌دهد — بر اساس data-calendar روی <html>.
@@ -29,8 +27,8 @@ export function DateText({
   return (
     <>
       <span className="cal-jalali">
-        {faDigits(isoToJalaliString(iso))}
-        {faDigits(clock)}
+        {isoToJalaliString(iso)}
+        {clock}
       </span>
       <span className="cal-gregorian">
         {iso}

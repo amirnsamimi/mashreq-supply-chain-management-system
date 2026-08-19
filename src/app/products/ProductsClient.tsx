@@ -2,14 +2,16 @@
 
 import { useState } from "react";
 import type { Product } from "@/lib/queries";
+import type { Paged } from "@/lib/paging";
 import { money, qty as fq } from "@/lib/format";
 import { createProduct, deleteProduct, updateProduct } from "@/lib/actions";
-import { UNITS } from "@/lib/lists";
+import { CURRENCIES, UNITS } from "@/lib/lists";
 import { ActionForm, Submit } from "@/components/ActionForm";
-import { Badge, Button, Card, DataTable, Input, Modal, NumberInput, SelectField, Textarea } from "@/components/geist";
+import { Badge, Button, Card, DataTable, Input, Modal, Note, NumberInput, SelectField, Textarea } from "@/components/geist";
 import type { Column } from "@/components/geist/DataTable";
 
-export function ProductsClient({ products }: { products: Product[] }) {
+export function ProductsClient({ page }: { page: Paged<Product> }) {
+  const products = page.rows;
   const [edit, setEdit] = useState<Product | null>(null);
 
   const columns: Column<Product>[] = [
@@ -18,16 +20,25 @@ export function ProductsClient({ products }: { products: Product[] }) {
       header: "کد کالا / SKU",
       value: (r) => r.sku,
       render: (r) => <span className="num font-medium">{r.sku}</span>,
-      total: (rows) => `${rows.length} کالا`,
+      total: (rows) => `جمع این صفحه (${rows.length} کالا)`,
     },
     { key: "name", header: "نام کالا", value: (r) => r.name },
+    { key: "brand", header: "برند", value: (r) => r.brand },
     { key: "category", header: "دسته", value: (r) => r.category },
     { key: "unit", header: "واحد", value: (r) => r.unit },
     {
       key: "last_price",
-      header: "آخرین قیمت",
+      header: "قیمت مرجع",
       value: (r) => r.last_price,
-      render: (r) => <span className="num">{r.last_price === null ? "—" : money(r.last_price)}</span>,
+      render: (r) =>
+        r.last_price === null ? (
+          "—"
+        ) : (
+          <span className="num">
+            {money(r.last_price)}{" "}
+            <span className="text-[var(--geist-tertiary)]">{r.currency}</span>
+          </span>
+        ),
     },
     {
       key: "invoice_count",
@@ -67,6 +78,7 @@ export function ProductsClient({ products }: { products: Product[] }) {
       <DataTable
         rows={products}
         columns={columns}
+        server={page}
         searchPlaceholder="جست‌وجو در کد، نام یا دسته کالا…"
         emptyTitle="هنوز کالایی تعریف نشده است"
         emptyHint="اول کالاها را تعریف کنید تا بتوانید در فاکتورها از فهرست انتخابشان کنید"
@@ -86,9 +98,22 @@ function ProductFields({ p }: { p?: Product }) {
     <>
       <Input name="sku" label="کد کالا / SKU" defaultValue={p?.sku ?? ""} required dir="ltr" />
       <Input name="name" label="نام کالا" defaultValue={p?.name ?? ""} required />
-      <Input name="category" label="دسته" defaultValue={p?.category ?? ""} />
+      <Input name="brand" label="برند (اختیاری)" defaultValue={p?.brand ?? ""} />
+      <Input name="category" label="دسته (اختیاری)" defaultValue={p?.category ?? ""} />
       <SelectField name="unit" label="واحد" defaultValue={p?.unit ?? ""} options={UNITS} allowEmpty />
-      <NumberInput name="last_price" label="آخرین قیمت واحد" defaultValue={p?.last_price ?? null} />
+      <NumberInput name="last_price" label="قیمت مرجع هر واحد" defaultValue={p?.last_price ?? null} />
+      <SelectField
+        name="currency"
+        label="ارز قیمت مرجع"
+        defaultValue={p?.currency ?? "RMB"}
+        options={CURRENCIES}
+      />
+      <div className="sm:col-span-2">
+        <Note>
+          قیمت مرجع فقط پیشنهاد اولیه هنگام افزودن این کالا به فاکتور است. اگر ارز فاکتور با ارز
+          این قیمت یکی نباشد، پیشنهادی داده نمی‌شود و قیمت مرجع هم با آن فاکتور به‌روز نمی‌شود.
+        </Note>
+      </div>
       <div className="sm:col-span-2">
         <Textarea name="notes" label="توضیحات" rows={2} defaultValue={p?.notes ?? ""} />
       </div>

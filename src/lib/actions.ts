@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { sql } from "./db";
 import { logAudit } from "./audit";
 import {
+  currentUser,
   hashPassword,
   hasUsers,
   normalizePhone,
@@ -14,6 +15,13 @@ import {
   verifyPassword,
 } from "./auth";
 import { money } from "./format";
+import {
+  ALL_PERMISSIONS,
+  canManageUsers,
+  roleDefaults,
+  ROLES,
+  type PermissionKey,
+} from "./permissions";
 import { runRules, TRIGGERS } from "./notifications";
 
 /** نتیجهٔ یکنواخت فرم‌ها: پیام خطا یا موفقیت */
@@ -52,6 +60,21 @@ export async function loginAction(_prev: FormResult, fd: FormData): Promise<Form
   if (!user.is_active) return err("حساب شما غیرفعال شده است");
 
   await startSession(Number(user.id));
+  const [full] = await sql`select id, phone, first_name, last_name, role from users where id = ${user.id}`;
+  await logAudit(
+    {
+      id: Number(full.id),
+      phone: String(full.phone),
+      first_name: String(full.first_name),
+      last_name: String(full.last_name),
+      role: String(full.role) as never,
+      permissions: [],
+    },
+    "ورود",
+    "session",
+    Number(full.id),
+    "ورود به سیستم"
+  );
   redirect("/");
 }
 
@@ -65,9 +88,10 @@ export async function setupAction(_prev: FormResult, fd: FormData): Promise<Form
   if (!phone || !first || !last) return err("همه فیلدها لازم است");
   if (password.length < 6) return err("رمز عبور باید حداقل ۶ کاراکتر باشد");
 
+  // اولین کاربر سیستم همیشه ادمین است
   const [row] = await sql`
-    insert into users (phone, first_name, last_name, password_hash)
-    values (${phone}, ${first}, ${last}, ${hashPassword(password)})
+    insert into users (phone, first_name, last_name, password_hash, role)
+    values (${phone}, ${first}, ${last}, ${hashPassword(password)}, 'admin')
     returning id
   `;
   await startSession(Number(row.id));
@@ -75,6 +99,8 @@ export async function setupAction(_prev: FormResult, fd: FormData): Promise<Form
 }
 
 export async function logoutAction() {
+  const me = await currentUser();
+  if (me) await logAudit(me, "خروج", "session", me.id, "خروج از سیستم");
   await signOut();
   redirect("/login");
 }
@@ -88,15 +114,19 @@ export async function createUser(_prev: FormResult, fd: FormData): Promise<FormR
   if (!phone || !first || !last) return err("نام، نام خانوادگی و شماره موبایل لازم است");
   if (password.length < 6) return err("رمز عبور باید حداقل ۶ کاراکتر باشد");
 
+  if (!canManageUsers(me.role)) return err("فقط ادمین و صاحب کسب‌وکار می‌توانند کاربر بسازند");
+
   const dup = await sql`select 1 from users where phone = ${phone}`;
   if (dup.length) return err("این شماره موبایل قبلاً ثبت شده است");
 
+  const role = ROLES.some((r) => r.value === s(fd, "role")) ? s(fd, "role")! : "staff";
+
   const [row] = await sql`
-    insert into users (phone, first_name, last_name, password_hash)
-    values (${phone}, ${first}, ${last}, ${hashPassword(password)})
+    insert into users (phone, first_name, last_name, password_hash, role)
+    values (${phone}, ${first}, ${last}, ${hashPassword(password)}, ${role})
     returning id
   `;
-  await logAudit(me, "ایجاد", "user", Number(row.id), `کاربر ${first} ${last} (${phone})`);
+  await logAudit(me, "ایجاد", "user", Number(row.id), `کاربر ${first} ${last} (${phone}) با نقش ${role}`);
   revalidatePath("/users");
   return ok(`کاربر ${first} ${last} اضافه شد`);
 }
@@ -187,9 +217,9 @@ export async function createProduct(_prev: FormResult, fd: FormData): Promise<Fo
   if (dup.length) return err(`کالایی با کد ${sku} از قبل ثبت شده است`);
 
   const [row] = await sql`
-    insert into products (sku, name, category, unit, last_price, notes)
-    values (${sku}, ${name}, ${s(fd, "category")}, ${s(fd, "unit")},
-            ${n(fd, "last_price")}, ${s(fd, "notes")})
+    insert into products (sku, name, brand, category, unit, last_price, currency, notes)
+    values (${sku}, ${name}, ${s(fd, "brand")}, ${s(fd, "category")}, ${s(fd, "unit")},
+            ${n(fd, "last_price")}, ${s(fd, "currency") ?? "RMB"}, ${s(fd, "notes")})
     returning id
   `;
   await logAudit(me, "ایجاد", "product", Number(row.id), `${sku} — ${name}`);
@@ -209,8 +239,9 @@ export async function updateProduct(_prev: FormResult, fd: FormData): Promise<Fo
 
   await sql`
     update products set
-      sku = ${sku}, name = ${name}, category = ${s(fd, "category")},
-      unit = ${s(fd, "unit")}, last_price = ${n(fd, "last_price")},
+      sku = ${sku}, name = ${name}, brand = ${s(fd, "brand")},
+      category = ${s(fd, "category")}, unit = ${s(fd, "unit")},
+      last_price = ${n(fd, "last_price")}, currency = ${s(fd, "currency") ?? "RMB"},
       notes = ${s(fd, "notes")}, is_active = ${fd.get("is_active") === "off" ? false : true}
     where id = ${id}
   `;
@@ -377,16 +408,22 @@ export async function createItem(_prev: FormResult, fd: FormData): Promise<FormR
   if (qty <= 0) return err("تعداد باید بزرگ‌تر از صفر باشد");
   if (price < 0) return err("قیمت واحد نمی‌تواند منفی باشد");
 
-  const [product] = await sql`select sku, name from products where id = ${productId}`;
+  const [product] = await sql`select sku, name, currency from products where id = ${productId}`;
   if (!product) return err("کالا پیدا نشد");
+
+  const [invoice] = await sql`select currency from invoices where id = ${invoiceId}`;
+  const sameCurrency = String(invoice?.currency ?? "") === String(product.currency);
 
   const [row] = await sql`
     insert into invoice_items (invoice_id, product_id, sku, description, qty, unit_price, notes)
     values (${invoiceId}, ${productId}, ${product.sku}, ${product.name}, ${qty}, ${price}, ${s(fd, "notes")})
     returning id
   `;
-  // آخرین قیمت کالا برای پیشنهاد دفعه بعد
-  await sql`update products set last_price = ${price} where id = ${productId}`;
+  // قیمت مرجع فقط وقتی به‌روز می‌شود که ارز فاکتور با ارز کالا یکی باشد،
+  // وگرنه عددی به ارز دیگر جای قیمت مرجع می‌نشیند
+  if (sameCurrency) {
+    await sql`update products set last_price = ${price} where id = ${productId}`;
+  }
   await logAudit(me, "ایجاد", "item", Number(row.id), `${product.sku} × ${qty}`);
   revalidatePath(`/invoices/${invoiceId}`);
   revalidatePath("/products");
@@ -778,4 +815,49 @@ export async function dismissAll() {
   `;
   revalidatePath("/notifications");
   revalidatePath("/", "layout");
+}
+
+
+/* ================= نقش و دسترسی ================= */
+
+export async function updateUserAccess(_prev: FormResult, fd: FormData): Promise<FormResult> {
+  const me = await requireAuth();
+  if (!canManageUsers(me.role)) {
+    return err("فقط ادمین و صاحب کسب‌وکار می‌توانند دسترسی‌ها را تغییر دهند");
+  }
+
+  const id = Number(fd.get("id"));
+  const role = ROLES.some((r) => r.value === s(fd, "role")) ? s(fd, "role")! : "staff";
+  const useDefaults = fd.get("use_defaults") === "on";
+
+  // اگر ادمین خودش را از مدیریت کاربران بیندازد بیرون، راه برگشتی نمی‌ماند
+  const picked = ALL_PERMISSIONS.filter((k) => fd.get(`perm_${k}`) === "on");
+  if (id === me.id && !useDefaults && !picked.includes("users")) {
+    return err("نمی‌توانید دسترسی «کاربران» را از حساب خودتان بردارید");
+  }
+  if (id === me.id && useDefaults && !roleDefaults(role).includes("users")) {
+    return err("با این نقش، دسترسی شما به «کاربران» قطع می‌شود؛ نقش دیگری انتخاب کنید");
+  }
+
+  const permissions: PermissionKey[] | null = useDefaults ? null : picked;
+
+  await sql`
+    update users set role = ${role}, permissions = ${
+      permissions === null ? null : JSON.stringify(permissions)
+    }::jsonb
+    where id = ${id}
+  `;
+
+  const [u] = await sql`select first_name, last_name from users where id = ${id}`;
+  await logAudit(
+    me,
+    "ویرایش",
+    "user",
+    id,
+    `دسترسی ${u?.first_name ?? ""} ${u?.last_name ?? ""} — نقش ${role}` +
+      (permissions ? ` با ${permissions.length} دسترسی دستی` : " با دسترسی پیش‌فرض نقش")
+  );
+  revalidatePath("/users");
+  revalidatePath("/", "layout");
+  return ok("دسترسی‌ها ذخیره شد");
 }

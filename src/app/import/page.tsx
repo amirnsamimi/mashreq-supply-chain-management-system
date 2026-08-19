@@ -1,4 +1,4 @@
-import { requireAuth } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { Page } from "@/components/Nav";
 import { Button, Card, Note } from "@/components/geist";
 import { ImportForm } from "./ImportForm";
@@ -6,9 +6,14 @@ import { ImportForm } from "./ImportForm";
 export const dynamic = "force-dynamic";
 
 export default async function ImportPage() {
-  const me = await requireAuth();
+  const me = await requirePermission("import");
   return (
-    <Page active="/import" title="ورود داده از اکسل" user={`${me.first_name} ${me.last_name}`}>
+    <Page
+      active="/import"
+      title="ورود داده از اکسل"
+      user={`${me.first_name} ${me.last_name}`}
+      permissions={me.permissions}
+    >
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <Card

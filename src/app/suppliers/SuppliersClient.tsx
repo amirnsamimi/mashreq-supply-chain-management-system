@@ -3,13 +3,15 @@
 import Link from "next/link";
 import { useState } from "react";
 import type { Supplier } from "@/lib/queries";
+import type { Paged } from "@/lib/paging";
 import { money } from "@/lib/format";
 import { createSupplier, deleteSupplier, updateSupplier } from "@/lib/actions";
 import { ActionForm, Submit } from "@/components/ActionForm";
 import { Badge, Button, Card, DataTable, Input, Modal, Textarea } from "@/components/geist";
 import type { Column } from "@/components/geist/DataTable";
 
-export function SuppliersClient({ suppliers }: { suppliers: Supplier[] }) {
+export function SuppliersClient({ page }: { page: Paged<Supplier> }) {
+  const suppliers = page.rows;
   const [edit, setEdit] = useState<Supplier | null>(null);
 
   const columns: Column<Supplier>[] = [
@@ -18,7 +20,7 @@ export function SuppliersClient({ suppliers }: { suppliers: Supplier[] }) {
       header: "نام تأمین‌کننده",
       value: (r) => r.name,
       render: (r) => <span className="font-medium">{r.name}</span>,
-      total: (rows) => `${rows.length} تأمین‌کننده`,
+      total: (rows) => `جمع این صفحه (${rows.length} تأمین‌کننده)`,
     },
     { key: "contact", header: "شخص رابط", value: (r) => r.contact },
     {
@@ -39,7 +41,7 @@ export function SuppliersClient({ suppliers }: { suppliers: Supplier[] }) {
             {r.invoice_count}
           </Link>
         ) : (
-          <span className="num text-[var(--geist-tertiary)]">۰</span>
+          <span className="num text-[var(--geist-tertiary)]">0</span>
         ),
       total: (rows) => <span className="num">{rows.reduce((s, r) => s + r.invoice_count, 0)}</span>,
     },
@@ -86,6 +88,7 @@ export function SuppliersClient({ suppliers }: { suppliers: Supplier[] }) {
       <DataTable
         rows={suppliers}
         columns={columns}
+        server={page}
         searchPlaceholder="جست‌وجو در نام، رابط، تلفن یا شهر…"
         emptyTitle="هنوز تأمین‌کننده‌ای تعریف نشده است"
         emptyHint="اول تأمین‌کننده‌ها را بسازید تا در فاکتورها از فهرست انتخابشان کنید"

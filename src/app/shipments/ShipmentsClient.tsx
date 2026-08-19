@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import type { Shipment } from "@/lib/queries";
+import type { Paged } from "@/lib/paging";
 import { money, qty as fq } from "@/lib/format";
 import { createShipment } from "@/lib/actions";
 import { MODES } from "@/lib/lists";
@@ -12,7 +13,8 @@ import type { Column } from "@/components/geist/DataTable";
 import { statusTone } from "@/lib/tones";
 import { DateText } from "@/components/DateText";
 
-export function ShipmentsClient({ shipments }: { shipments: Shipment[] }) {
+export function ShipmentsClient({ page }: { page: Paged<Shipment> }) {
+  const shipments = page.rows;
   const [open, setOpen] = useState(false);
 
   const columns: Column<Shipment>[] = [
@@ -25,7 +27,7 @@ export function ShipmentsClient({ shipments }: { shipments: Shipment[] }) {
           {r.shipment_no}
         </Link>
       ),
-      total: (rows) => `جمع ${rows.length} پارت`,
+      total: (rows) => `جمع این صفحه (${rows.length} پارت)`,
     },
     { key: "invoice_nos", header: "فاکتورها", value: (r) => r.invoice_nos },
     { key: "carrier", header: "کارگو", value: (r) => r.carrier },
@@ -74,6 +76,7 @@ export function ShipmentsClient({ shipments }: { shipments: Shipment[] }) {
       <DataTable
         rows={shipments}
         columns={columns}
+        server={page}
         searchPlaceholder="جست‌وجو در پارت‌ها…"
         emptyTitle="هنوز پارتی ثبت نشده است"
         emptyHint="با دکمه «پارت جدید» شروع کنید"

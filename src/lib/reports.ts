@@ -1,7 +1,7 @@
-import { toJalali, JALALI_MONTHS } from "./jalali";
+import { toGregorian, toJalali, JALALI_MONTHS } from "./jalali";
 
 const faDigits = (n: number | string) =>
-  String(n).replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)]);
+  String(n).replace(/\d/g, (d) => "0123456789"[Number(d)]);
 import {
   listAllPayments,
   listInvoices,
@@ -12,21 +12,32 @@ import {
 
 export type Bucket = { label: string; value: number };
 
+const GREGORIAN_SHORT = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
 const monthKey = (iso: string) => {
   const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
   const j = toJalali(y, m, d);
-  return { key: `${j.jy}-${String(j.jm).padStart(2, "0")}`, label: `${JALALI_MONTHS[j.jm - 1]} ${faDigits(j.jy)}` };
+  return { key: `${j.jy}-${String(j.jm).padStart(2, "0")}` };
 };
 
-/** آخرین n ماه شمسی به ترتیب، حتی ماه‌های خالی */
+/** آخرین n ماه شمسی به ترتیب، با برچسب در هر دو تقویم */
 function lastMonths(n: number) {
   const now = new Date();
   const t = toJalali(now.getFullYear(), now.getMonth() + 1, now.getDate());
-  const out: { key: string; label: string }[] = [];
+  const out: { key: string; jalali: string; gregorian: string }[] = [];
   let jy = t.jy;
   let jm = t.jm;
   for (let i = 0; i < n; i++) {
-    out.unshift({ key: `${jy}-${String(jm).padStart(2, "0")}`, label: `${JALALI_MONTHS[jm - 1]} ${faDigits(jy)}` });
+    // ماه شمسی روی دو ماه میلادی می‌افتد؛ برچسب میلادی را از میانه ماه می‌گیریم
+    const g = toGregorian(jy, jm, 15);
+    out.unshift({
+      key: `${jy}-${String(jm).padStart(2, "0")}`,
+      jalali: `${JALALI_MONTHS[jm - 1]} ${jy}`,
+      gregorian: `${GREGORIAN_SHORT[g.gm - 1]} ${g.gy}`,
+    });
     jm -= 1;
     if (jm < 1) {
       jm = 12;
@@ -38,7 +49,7 @@ function lastMonths(n: number) {
 
 export type ReportData = {
   currencies: string[];
-  months: string[];
+  months: { jalali: string; gregorian: string }[];
   purchasesByMonth: number[];
   paymentsByMonth: number[];
   freightByMonth: number[];
@@ -117,9 +128,9 @@ export async function buildReport(currency: string, monthCount = 12): Promise<Re
   const todayMs = new Date(new Date().toISOString().slice(0, 10)).getTime();
   const agingBuckets = [
     { label: "سررسید نشده", min: -Infinity, max: 0 },
-    { label: "۱ تا ۳۰ روز", min: 1, max: 30 },
-    { label: "۳۱ تا ۶۰ روز", min: 31, max: 60 },
-    { label: "بیش از ۶۰ روز", min: 61, max: Infinity },
+    { label: "1 تا 30 روز", min: 1, max: 30 },
+    { label: "31 تا 60 روز", min: 31, max: 60 },
+    { label: "بیش از 60 روز", min: 61, max: Infinity },
   ];
   const aging = agingBuckets.map((b) => ({ label: b.label, value: 0 }));
   for (const inv of invoices) {
@@ -259,7 +270,7 @@ export async function buildReport(currency: string, monthCount = 12): Promise<Re
 
   return {
     currencies,
-    months: months.map((m) => m.label),
+    months: months.map((m) => ({ jalali: m.jalali, gregorian: m.gregorian })),
     purchasesByMonth: months.map((m) => purchases[m.key]),
     paymentsByMonth: months.map((m) => paid[m.key]),
     freightByMonth: months.map((m) => freight[m.key]),

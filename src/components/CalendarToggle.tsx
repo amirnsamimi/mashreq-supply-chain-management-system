@@ -30,7 +30,7 @@ export function CalendarToggle() {
       aria-label="تغییر تقویم نمایش"
       className="num rounded-full border border-[var(--geist-border)] px-2 py-1 text-[0.65rem] leading-none text-[var(--geist-secondary)] transition hover:border-[var(--geist-foreground)] hover:text-[var(--geist-foreground)]"
     >
-      {ready ? (cal === "jalali" ? "۱۴۰۴" : "2025") : "۱۴۰۴"}
+      {ready ? (cal === "jalali" ? "1404" : "2025") : "1404"}
     </button>
   );
 }

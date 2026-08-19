@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import type { Paged } from "@/lib/paging";
 import { Badge, DataTable } from "@/components/geist";
 import type { Column } from "@/components/geist/DataTable";
 import { statusTone } from "@/lib/tones";
@@ -26,7 +27,8 @@ const hrefFor = (entity: string, id: number | null) => {
 };
 
 
-export function HistoryTable({ rows }: { rows: Row[] }) {
+export function HistoryTable({ page }: { page: Paged<Row> }) {
+  const rows = page.rows;
   const columns: Column<Row>[] = [
     {
       key: "created_at",
@@ -67,6 +69,7 @@ export function HistoryTable({ rows }: { rows: Row[] }) {
     <DataTable
       rows={rows}
       columns={columns}
+      server={page}
       searchPlaceholder="جست‌وجو در تاریخچه…"
       emptyTitle="هنوز تغییری ثبت نشده است"
       emptyHint="هر ایجاد، ویرایش و حذفی از این پس اینجا ثبت می‌شود"

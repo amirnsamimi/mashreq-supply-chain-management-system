@@ -5,21 +5,25 @@ import { CalendarToggle } from "./CalendarToggle";
 import { NavHeight } from "./NavHeight";
 import { ThemeToggle } from "./ThemeToggle";
 
-const links = [
-  { href: "/", label: "داشبورد" },
-  { href: "/suppliers", label: "تأمین‌کنندگان" },
-  { href: "/products", label: "کالاها" },
-  { href: "/invoices", label: "فاکتورها" },
-  { href: "/payments", label: "پرداخت‌ها" },
-  { href: "/shipments", label: "پارت‌های ارسال" },
-  { href: "/import", label: "ورود داده" },
-  { href: "/reports", label: "گزارش‌ها" },
-  { href: "/history", label: "تاریخچه" },
-  { href: "/users", label: "کاربران" },
-];
+import { PERMISSIONS, type PermissionKey } from "@/lib/permissions";
 
-export async function Nav({ active, user }: { active: string; user?: string }) {
-  // موتور اعلان حداکثر هر ۱۰ دقیقه یک‌بار، همراه با بارگذاری صفحه اجرا می‌شود
+/** منو از روی همان فهرست دسترسی‌ها ساخته می‌شود تا از هم جدا نیفتند */
+const links = PERMISSIONS.filter((p) => p.key !== "notifications").map((p) => ({
+  href: p.path,
+  label: p.label,
+  key: p.key as PermissionKey,
+}));
+
+export async function Nav({
+  active,
+  user,
+  permissions = [],
+}: {
+  active: string;
+  user?: string;
+  permissions?: PermissionKey[];
+}) {
+  // موتور اعلان حداکثر هر 10 دقیقه یک‌بار، همراه با بارگذاری صفحه اجرا می‌شود
   await runRulesThrottled().catch(() => null);
   const unread = await unreadCount().catch(() => 0);
 
@@ -46,7 +50,7 @@ export async function Nav({ active, user }: { active: string; user?: string }) {
               </svg>
               {unread > 0 && (
                 <span className="num absolute -top-0.5 -left-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--geist-red)] px-1 text-[0.6rem] font-medium leading-none text-white">
-                  {unread > 99 ? "۹۹+" : unread}
+                  {unread > 99 ? "99+" : unread}
                 </span>
               )}
             </Link>
@@ -61,7 +65,9 @@ export async function Nav({ active, user }: { active: string; user?: string }) {
         </div>
 
         <nav className="scroll-hidden -mx-4 flex items-center gap-1 px-4 pb-2 sm:mx-0 sm:px-0">
-          {links.map((l) => (
+          {links
+            .filter((l) => permissions.includes(l.key))
+            .map((l) => (
             <Link
               key={l.href}
               href={l.href}
@@ -85,17 +91,19 @@ export async function Page({
   title,
   action,
   user,
+  permissions,
   children,
 }: {
   active: string;
   title: React.ReactNode;
   action?: React.ReactNode;
   user?: string;
+  permissions?: PermissionKey[];
   children: React.ReactNode;
 }) {
   return (
     <>
-      {await Nav({ active, user })}
+      {await Nav({ active, user, permissions })}
       <main className="mx-auto max-w-[1400px] px-4 py-6 sm:px-5 sm:py-7">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3 sm:mb-6">
           <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h1>

@@ -1,11 +1,13 @@
-import { requireAuth } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { sql } from "@/lib/db";
 import { deleteUser, toggleUserActive } from "@/lib/actions";
 import { Page } from "@/components/Nav";
 import { Badge, Button, Card, Empty, Note } from "@/components/geist";
 import { statusTone } from "@/lib/tones";
 import { DateText } from "@/components/DateText";
+import { canManageUsers, roleLabel, type PermissionKey } from "@/lib/permissions";
 import {
+  AccessButton,
   ChangeOwnPasswordCard,
   EditUserButton,
   NewUserTrigger,
@@ -15,18 +17,21 @@ import {
 export const dynamic = "force-dynamic";
 
 export default async function UsersPage() {
-  const me = await requireAuth();
+  const me = await requirePermission("users");
   const users = await sql`
-    select id, phone, first_name, last_name, is_active, created_at::text as created_at
+    select id, phone, first_name, last_name, is_active, role, permissions,
+           created_at::text as created_at
     from users order by id
   `;
+  const canManage = canManageUsers(me.role);
 
   return (
     <Page
       active="/users"
       title="کاربران"
       user={`${me.first_name} ${me.last_name}`}
-      action={<NewUserTrigger />}
+      permissions={me.permissions}
+      action={canManage ? <NewUserTrigger /> : undefined}
     >
       <Card>
         {users.length === 0 ? (
@@ -39,6 +44,7 @@ export default async function UsersPage() {
                   <th>نام</th>
                   <th>نام خانوادگی</th>
                   <th>شماره موبایل</th>
+                  <th>نقش</th>
                   <th>وضعیت</th>
                   <th>تاریخ ساخت</th>
                   <th></th>
@@ -64,14 +70,36 @@ export default async function UsersPage() {
                         {String(u.phone)}
                       </td>
                       <td>
+                        <Badge tone={String(u.role) === "admin" ? "purple" : "blue"}>
+                          {roleLabel(String(u.role))}
+                        </Badge>
+                        {u.permissions !== null && (
+                          <span className="mr-1.5 text-xs text-[var(--geist-tertiary)]">
+                            (دستی)
+                          </span>
+                        )}
+                      </td>
+                      <td>
                         <Badge tone={statusTone(status)}>{status}</Badge>
                       </td>
                       <td>{<DateText value={String(u.created_at)} />}</td>
                       <td>
                         <div className="flex items-center gap-1">
                           <EditUserButton id={id} first={first} last={last} phone={String(u.phone)} />
-                          <ResetPasswordButton id={id} name={`${first} ${last}`} />
-                          {!isMe && (
+                          {canManage && (
+                            <AccessButton
+                              id={id}
+                              name={`${first} ${last}`}
+                              role={String(u.role)}
+                              overrides={
+                                Array.isArray(u.permissions)
+                                  ? (u.permissions as PermissionKey[])
+                                  : null
+                              }
+                            />
+                          )}
+                          {canManage && <ResetPasswordButton id={id} name={`${first} ${last}`} />}
+                          {canManage && !isMe && (
                             <>
                               <form action={toggleUserActive}>
                                 <input type="hidden" name="id" value={id} />
@@ -119,8 +147,9 @@ export default async function UsersPage() {
 
       <div className="mt-4">
         <Note>
-          همه کاربران دسترسی یکسان دارند. رمزها با scrypt و نمک تصادفی ذخیره می‌شوند و قابل بازیابی
-          نیستند؛ برای کاربری که رمزش را فراموش کرده از «تغییر رمز» استفاده کنید.
+          نقش هر کاربر یک مجموعه دسترسی پیش‌فرض می‌دهد و در صورت نیاز می‌توانید همان را دستی تغییر
+          دهید. فقط <b>ادمین</b> و <b>صاحب کسب‌وکار</b> می‌توانند کاربر بسازند و دسترسی‌ها را عوض
+          کنند. رمزها با scrypt و نمک تصادفی ذخیره می‌شوند و قابل بازیابی نیستند.
         </Note>
       </div>
     </Page>

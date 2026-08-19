@@ -1,5 +1,6 @@
 import { sql } from "./db";
 import { num } from "./format";
+import { like, paged, type PageParams, type Paged } from "./paging";
 
 export type PaymentStatus = "تسویه‌شده" | "بخشی پرداخت‌شده" | "سررسید گذشته" | "پرداخت‌نشده";
 export type ItemStatus = "کاملاً دریافت‌شده" | "کامل ارسال‌شده" | "بخشی ارسال‌شده" | "ارسال‌نشده";
@@ -358,7 +359,10 @@ export type Product = {
   id: number;
   sku: string;
   name: string;
+  brand: string | null;
   category: string | null;
+  /** ارزی که قیمت مرجع به آن است */
+  currency: string;
   unit: string | null;
   last_price: number | null;
   notes: string | null;
@@ -366,6 +370,23 @@ export type Product = {
   invoice_count: number;
   total_qty: number;
 };
+
+function shapeProduct(r: Record<string, unknown>): Product {
+  return {
+    id: Number(r.id),
+    sku: String(r.sku),
+    name: String(r.name),
+    brand: (r.brand as string | null) ?? null,
+    category: (r.category as string | null) ?? null,
+    currency: String(r.currency ?? "RMB"),
+    unit: (r.unit as string | null) ?? null,
+    last_price: r.last_price === null ? null : num(r.last_price),
+    notes: (r.notes as string | null) ?? null,
+    is_active: Boolean(r.is_active),
+    invoice_count: num(r.invoice_count),
+    total_qty: num(r.total_qty),
+  };
+}
 
 export async function listProducts(): Promise<Product[]> {
   const rows = await sql`
@@ -379,18 +400,7 @@ export async function listProducts(): Promise<Product[]> {
     ) u on true
     order by p.sku
   `;
-  return rows.map((r) => ({
-    id: Number(r.id),
-    sku: String(r.sku),
-    name: String(r.name),
-    category: (r.category as string | null) ?? null,
-    unit: (r.unit as string | null) ?? null,
-    last_price: r.last_price === null ? null : num(r.last_price),
-    notes: (r.notes as string | null) ?? null,
-    is_active: Boolean(r.is_active),
-    invoice_count: num(r.invoice_count),
-    total_qty: num(r.total_qty),
-  }));
+  return rows.map(shapeProduct);
 }
 
 /* ---------- پرداخت‌ها (همه فاکتورها) ---------- */
@@ -408,14 +418,8 @@ export type PaymentRow = {
   notes: string | null;
 };
 
-export async function listAllPayments(): Promise<PaymentRow[]> {
-  const rows = await sql`
-    select p.*, i.invoice_no, i.supplier, i.currency
-    from payments p
-    join invoices i on i.id = p.invoice_id
-    order by p.payment_date desc nulls last, p.id desc
-  `;
-  return rows.map((r) => ({
+function shapePayment(r: Record<string, unknown>): PaymentRow {
+  return {
     id: Number(r.id),
     invoice_id: Number(r.invoice_id),
     invoice_no: String(r.invoice_no),
@@ -426,7 +430,17 @@ export async function listAllPayments(): Promise<PaymentRow[]> {
     method: (r.method as string | null) ?? null,
     reference: (r.reference as string | null) ?? null,
     notes: (r.notes as string | null) ?? null,
-  }));
+  };
+}
+
+export async function listAllPayments(): Promise<PaymentRow[]> {
+  const rows = await sql`
+    select p.*, i.invoice_no, i.supplier, i.currency
+    from payments p
+    join invoices i on i.id = p.invoice_id
+    order by p.payment_date desc nulls last, p.id desc
+  `;
+  return rows.map(shapePayment);
 }
 
 /* ---------- تأمین‌کنندگان ---------- */
@@ -470,4 +484,164 @@ export async function listSuppliers(): Promise<Supplier[]> {
       balance: mine.reduce((s, i) => s + i.balance, 0),
     };
   });
+}
+
+
+/* ================= نسخه‌های صفحه‌بندی‌شده ================= */
+
+/**
+ * ستون‌های مجاز برای مرتب‌سازی. هر چیزی بیرون از این فهرست رد می‌شود،
+ * چون نام ستون مستقیم در SQL می‌نشیند.
+ */
+export const INVOICE_SORTS = [
+  "invoice_no", "supplier", "invoice_date", "currency",
+  "total_amount", "items_total", "paid", "balance", "due_date",
+] as const;
+
+export async function listInvoicesPaged(p: PageParams): Promise<Paged<Invoice>> {
+  const where = p.q
+    ? sql`where t.invoice_no ilike ${like(p.q)} or coalesce(t.supplier,'') ilike ${like(p.q)}
+            or coalesce(t.currency,'') ilike ${like(p.q)} or coalesce(t.notes,'') ilike ${like(p.q)}`
+    : sql``;
+  const order = sql`order by ${sql(p.sort)} ${p.dir === "asc" ? sql`asc` : sql`desc`} nulls last, t.id desc`;
+
+  const rows = await sql`
+    select t.* from (
+      ${invoiceSelect}
+    ) t
+    ${where}
+    ${order}
+    limit ${p.limit} offset ${(p.page - 1) * p.limit}
+  `;
+  const [{ n }] = await sql`select count(*)::int as n from (${invoiceSelect}) t ${where}`;
+  return paged(rows.map(shapeInvoice), Number(n), p);
+}
+
+export const SHIPMENT_SORTS = [
+  "shipment_no", "carrier", "mode", "handover_date", "depart_date",
+  "receive_date", "total_qty", "received_qty", "freight_cost",
+] as const;
+
+export async function listShipmentsPaged(p: PageParams): Promise<Paged<Shipment>> {
+  const where = p.q
+    ? sql`where t.shipment_no ilike ${like(p.q)} or coalesce(t.carrier,'') ilike ${like(p.q)}
+            or coalesce(t.mode,'') ilike ${like(p.q)} or coalesce(t.tracking_no,'') ilike ${like(p.q)}
+            or coalesce(t.invoice_nos,'') ilike ${like(p.q)}`
+    : sql``;
+  const order = sql`order by ${sql(p.sort)} ${p.dir === "asc" ? sql`asc` : sql`desc`} nulls last, t.id desc`;
+
+  const rows = await sql`
+    select t.* from (${shipmentSelect}) t ${where} ${order}
+    limit ${p.limit} offset ${(p.page - 1) * p.limit}
+  `;
+  const [{ n }] = await sql`select count(*)::int as n from (${shipmentSelect}) t ${where}`;
+  return paged(rows.map(shapeShipment), Number(n), p);
+}
+
+export const PRODUCT_SORTS = [
+  "sku", "name", "brand", "category", "unit", "last_price", "invoice_count", "total_qty",
+] as const;
+
+export async function listProductsPaged(p: PageParams): Promise<Paged<Product>> {
+  const base = sql`
+    select p.*,
+      coalesce(u.invoice_count, 0) as invoice_count,
+      coalesce(u.total_qty, 0)     as total_qty
+    from products p
+    left join lateral (
+      select count(distinct ii.invoice_id) as invoice_count, sum(ii.qty) as total_qty
+      from invoice_items ii where ii.product_id = p.id
+    ) u on true
+  `;
+  const where = p.q
+    ? sql`where t.sku ilike ${like(p.q)} or t.name ilike ${like(p.q)}
+            or coalesce(t.brand,'') ilike ${like(p.q)} or coalesce(t.category,'') ilike ${like(p.q)}`
+    : sql``;
+  const order = sql`order by ${sql(p.sort)} ${p.dir === "asc" ? sql`asc` : sql`desc`} nulls last, t.id desc`;
+
+  const rows = await sql`
+    select t.* from (${base}) t ${where} ${order}
+    limit ${p.limit} offset ${(p.page - 1) * p.limit}
+  `;
+  const [{ n }] = await sql`select count(*)::int as n from (${base}) t ${where}`;
+  return paged(rows.map(shapeProduct), Number(n), p);
+}
+
+export const PAYMENT_SORTS = [
+  "payment_date", "invoice_no", "supplier", "amount", "method", "reference",
+] as const;
+
+export async function listPaymentsPaged(p: PageParams): Promise<Paged<PaymentRow>> {
+  const base = sql`
+    select pay.*, i.invoice_no, i.supplier, i.currency
+    from payments pay join invoices i on i.id = pay.invoice_id
+  `;
+  const where = p.q
+    ? sql`where t.invoice_no ilike ${like(p.q)} or coalesce(t.supplier,'') ilike ${like(p.q)}
+            or coalesce(t.method,'') ilike ${like(p.q)} or coalesce(t.reference,'') ilike ${like(p.q)}`
+    : sql``;
+  const order = sql`order by ${sql(p.sort)} ${p.dir === "asc" ? sql`asc` : sql`desc`} nulls last, t.id desc`;
+
+  const rows = await sql`
+    select t.* from (${base}) t ${where} ${order}
+    limit ${p.limit} offset ${(p.page - 1) * p.limit}
+  `;
+  const [{ n }] = await sql`select count(*)::int as n from (${base}) t ${where}`;
+  return paged(rows.map(shapePayment), Number(n), p);
+}
+
+
+export const SUPPLIER_SORTS = [
+  "name", "contact", "phone", "country", "city", "invoice_count", "total_amount", "balance",
+] as const;
+
+export async function listSuppliersPaged(p: PageParams): Promise<Paged<Supplier>> {
+  // مبالغ از فاکتورها می‌آید، پس همان‌جا در SQL حساب می‌شود تا مرتب‌سازی درست باشد
+  const base = sql`
+    select s.*,
+      coalesce(a.invoice_count, 0) as invoice_count,
+      coalesce(a.total_amount, 0)  as total_amount,
+      coalesce(a.balance, 0)       as balance
+    from suppliers s
+    left join lateral (
+      select count(*) as invoice_count,
+             sum(i.total_amount) as total_amount,
+             sum(greatest(i.total_amount - coalesce((
+               select sum(amount) from payments where invoice_id = i.id
+             ), 0), 0)) as balance
+      from invoices i where i.supplier_id = s.id
+    ) a on true
+  `;
+  const where = p.q
+    ? sql`where t.name ilike ${like(p.q)} or coalesce(t.contact,'') ilike ${like(p.q)}
+            or coalesce(t.phone,'') ilike ${like(p.q)} or coalesce(t.city,'') ilike ${like(p.q)}
+            or coalesce(t.country,'') ilike ${like(p.q)}`
+    : sql``;
+  const order = sql`order by ${sql(p.sort)} ${p.dir === "asc" ? sql`asc` : sql`desc`} nulls last, t.id desc`;
+
+  const rows = await sql`
+    select t.* from (${base}) t ${where} ${order}
+    limit ${p.limit} offset ${(p.page - 1) * p.limit}
+  `;
+  const [{ n }] = await sql`select count(*)::int as n from (${base}) t ${where}`;
+
+  return paged(
+    rows.map((r) => ({
+      id: Number(r.id),
+      name: String(r.name),
+      contact: (r.contact as string | null) ?? null,
+      phone: (r.phone as string | null) ?? null,
+      email: (r.email as string | null) ?? null,
+      country: (r.country as string | null) ?? null,
+      city: (r.city as string | null) ?? null,
+      address: (r.address as string | null) ?? null,
+      notes: (r.notes as string | null) ?? null,
+      is_active: Boolean(r.is_active),
+      invoice_count: num(r.invoice_count),
+      total_amount: num(r.total_amount),
+      balance: num(r.balance),
+    })),
+    Number(n),
+    p
+  );
 }

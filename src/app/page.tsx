@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAuth } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { listInvoices, listShipments } from "@/lib/queries";
 import { listNotifications } from "@/lib/notifications";
 import { money } from "@/lib/format";
@@ -11,7 +11,7 @@ import { statusTone } from "@/lib/tones";
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const me = await requireAuth();
+  const me = await requirePermission("dashboard");
   const invoices = await listInvoices();
   const shipments = await listShipments();
   const notifications = await listNotifications();
@@ -47,6 +47,7 @@ export default async function Home() {
       active="/"
       title="داشبورد"
       user={`${me.first_name} ${me.last_name}`}
+      permissions={me.permissions}
       action={
         <Link href="/reports">
           <Button>گزارش‌ها و نمودارها</Button>
@@ -61,7 +62,7 @@ export default async function Home() {
           tone={overdue.length ? "warn" : "good"}
           hint={overdue.length ? "همین امروز پیگیری کنید" : "چیزی معوق نیست"}
         />
-        <Stat label="سررسید تا ۷ روز آینده" value={dueSoon.length} />
+        <Stat label="سررسید تا 7 روز آینده" value={dueSoon.length} />
         <Stat
           label="اختلاف مبلغ فاکتور و اقلام"
           value={mismatched.length}

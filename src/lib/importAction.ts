@@ -18,7 +18,7 @@ export async function importAction(
     return { ok: false, message: "فایلی انتخاب نشده است", ...empty };
   }
   if (file.size > MAX_SIZE) {
-    return { ok: false, message: "حجم فایل نباید از ۱۵ مگابایت بیشتر باشد", ...empty };
+    return { ok: false, message: "حجم فایل نباید از 15 مگابایت بیشتر باشد", ...empty };
   }
 
   const report = await importWorkbook(me, file.name, await file.arrayBuffer());

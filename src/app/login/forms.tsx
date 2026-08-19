@@ -61,7 +61,7 @@ export function SetupForm() {
           <input name="phone" dir="ltr" placeholder="09121234567" required />
         </div>
         <div>
-          <label>رمز عبور (حداقل ۶ کاراکتر)</label>
+          <label>رمز عبور (حداقل 6 کاراکتر)</label>
           <input name="password" type="password" minLength={6} required />
         </div>
       </div>

@@ -43,12 +43,12 @@ export function Modal({
       aria-modal="true"
       aria-label={title}
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 backdrop-blur-[2px] sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-3 backdrop-blur-[2px] sm:p-4"
     >
       <div
         ref={ref}
         style={{ maxWidth: width, animation: "geist-fade-in 0.15s ease-out" }}
-        className="max-h-[90vh] w-full overflow-y-auto rounded-t-[var(--geist-radius-lg)] border border-[var(--geist-border)] bg-[var(--geist-background)] shadow-[var(--geist-shadow)] sm:rounded-[var(--geist-radius-lg)]"
+        className="my-auto max-h-[calc(100dvh-1.5rem)] w-full overflow-y-auto rounded-[var(--geist-radius-lg)] border border-[var(--geist-border)] bg-[var(--geist-background)] shadow-[var(--geist-shadow)]"
       >
         <div className="border-b border-[var(--geist-border)] px-5 py-4">
           <h2 className="text-base font-semibold tracking-tight">{title}</h2>

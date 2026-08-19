@@ -1,6 +1,7 @@
 "use client";
 
-import { useDeferredValue, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useDeferredValue, useEffect, useMemo, useState, useTransition } from "react";
 import { Input } from "./Input";
 import { Button } from "./Button";
 import { Empty } from "./Feedback";
@@ -20,6 +21,17 @@ export type Column<T> = {
 
 type Dir = "asc" | "desc";
 
+/** حالت سروری: صفحه‌بندی، جست‌وجو و مرتب‌سازی از URL و پایگاه داده می‌آید */
+export type ServerPaging = {
+  total: number;
+  page: number;
+  limit: number;
+  pageCount: number;
+  q: string;
+  sort: string;
+  dir: Dir;
+};
+
 export function DataTable<T extends { id: number | string }>({
   rows,
   columns,
@@ -30,6 +42,7 @@ export function DataTable<T extends { id: number | string }>({
   emptyAction,
   toolbar,
   showTotals = true,
+  server,
 }: {
   rows: T[];
   columns: Column<T>[];
@@ -40,20 +53,45 @@ export function DataTable<T extends { id: number | string }>({
   emptyAction?: React.ReactNode;
   toolbar?: React.ReactNode;
   showTotals?: boolean;
+  /** اگر داده شود، صفحه‌بندی و جست‌وجو سمت سرور انجام می‌شود */
+  server?: ServerPaging;
 }) {
-  const [q, setQ] = useState("");
-  const [sortKey, setSortKey] = useState<string | null>(null);
-  const [dir, setDir] = useState<Dir>("asc");
-  const [page, setPage] = useState(1);
-  const [size, setSize] = useState(pageSize);
+  const router = useRouter();
+  const params = useSearchParams();
+  const [busy, startNav] = useTransition();
+
+  const [q, setQ] = useState(server?.q ?? "");
+  const [sortKey, setSortKey] = useState<string | null>(server?.sort ?? null);
+  const [dir, setDir] = useState<Dir>(server?.dir ?? "asc");
+  const [page, setPage] = useState(server?.page ?? 1);
+  const [size, setSize] = useState(server?.limit ?? pageSize);
   const deferredQ = useDeferredValue(q);
+
+  /** آدرس را با پارامترهای تازه به‌روز می‌کند */
+  function push(next: Record<string, string | number | undefined>) {
+    const sp = new URLSearchParams(params.toString());
+    for (const [k, v] of Object.entries(next)) {
+      if (v === undefined || v === "" ) sp.delete(k);
+      else sp.set(k, String(v));
+    }
+    startNav(() => router.push(`?${sp.toString()}`, { scroll: false }));
+  }
+
+  // در حالت سروری، جست‌وجو با کمی تأخیر به URL می‌رود تا هر حرف یک رفت‌وبرگشت نشود
+  useEffect(() => {
+    if (!server) return;
+    if (q === server.q) return;
+    const t = setTimeout(() => push({ q: q || undefined, page: 1 }), 350);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, server?.q]);
 
   const valueOf = (row: T, col: Column<T>) =>
     col.value ? col.value(row) : (row as Record<string, unknown>)[col.key];
 
   const filtered = useMemo(() => {
     const needle = deferredQ.trim().toLowerCase();
-    if (!needle) return rows;
+    if (server || !needle) return rows;
     return rows.filter((row) =>
       columns.some((c) => String(valueOf(row, c) ?? "").toLowerCase().includes(needle))
     );
@@ -61,7 +99,7 @@ export function DataTable<T extends { id: number | string }>({
   }, [rows, columns, deferredQ]);
 
   const sorted = useMemo(() => {
-    if (!sortKey) return filtered;
+    if (server || !sortKey) return filtered;
     const col = columns.find((c) => c.key === sortKey);
     if (!col) return filtered;
     const factor = dir === "asc" ? 1 : -1;
@@ -77,18 +115,30 @@ export function DataTable<T extends { id: number | string }>({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtered, sortKey, dir, columns]);
 
-  const pageCount = Math.max(1, Math.ceil(sorted.length / size));
-  const current = Math.min(page, pageCount);
-  const visible = sorted.slice((current - 1) * size, current * size);
+  const pageCount = server ? server.pageCount : Math.max(1, Math.ceil(sorted.length / size));
+  const current = server ? server.page : Math.min(page, pageCount);
+  const visible = server ? sorted : sorted.slice((current - 1) * size, current * size);
+  const total = server ? server.total : sorted.length;
   const hasTotals = showTotals && columns.some((c) => c.total);
+  const showPager = server ? server.total > 0 : sorted.length > 10;
 
   function toggleSort(key: string) {
-    if (sortKey === key) setDir(dir === "asc" ? "desc" : "asc");
-    else {
-      setSortKey(key);
-      setDir("asc");
-    }
+    const nextDir: Dir = sortKey === key && dir === "asc" ? "desc" : "asc";
+    setSortKey(key);
+    setDir(nextDir);
     setPage(1);
+    if (server) push({ sort: key, dir: nextDir, page: 1 });
+  }
+
+  function goPage(next: number) {
+    setPage(next);
+    if (server) push({ page: next });
+  }
+
+  function changeSize(next: number) {
+    setSize(next);
+    setPage(1);
+    if (server) push({ limit: next, page: 1 });
   }
 
   return (
@@ -102,7 +152,7 @@ export function DataTable<T extends { id: number | string }>({
                 value={q}
                 onChange={(e) => {
                   setQ(e.target.value);
-                  setPage(1);
+                  if (!server) setPage(1);
                 }}
                 placeholder={searchPlaceholder}
                 prefix={
@@ -170,9 +220,11 @@ export function DataTable<T extends { id: number | string }>({
                     {columns.map((c, i) => (
                       <td key={c.key} className={c.className}>
                         {c.total
-                          ? c.total(sorted)
+                          ? c.total(visible)
                           : i === 0
-                            ? `جمع ${sorted.length} ردیف`
+                            ? server
+                              ? `جمع این صفحه (${visible.length} از ${total})`
+                              : `جمع ${sorted.length} ردیف`
                             : null}
                       </td>
                     ))}
@@ -182,29 +234,27 @@ export function DataTable<T extends { id: number | string }>({
             </table>
           </div>
 
-          {sorted.length > 10 && (
+          {showPager && (
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--geist-border)] px-3 py-2.5 text-xs text-[var(--geist-secondary)]">
               <span>
                 نمایش <span className="num">{(current - 1) * size + 1}</span> تا{" "}
-                <span className="num">{Math.min(current * size, sorted.length)}</span> از{" "}
-                <span className="num">{sorted.length}</span>
+                <span className="num">{Math.min(current * size, total)}</span> از{" "}
+                <span className="num">{total}</span>
+                {busy && <span className="mr-2 opacity-60">…</span>}
               </span>
               <div className="flex items-center gap-2">
                 <select
                   value={size}
-                  onChange={(e) => {
-                    setSize(Number(e.target.value));
-                    setPage(1);
-                  }}
+                  onChange={(e) => changeSize(Number(e.target.value))}
                   className="h-7 w-auto cursor-pointer rounded-[var(--geist-radius)] border border-[var(--geist-border)] bg-[var(--geist-background)] px-2 text-xs"
                 >
                   {[10, 25, 50, 100].map((n) => (
                     <option key={n} value={n}>
-                      {n} ردیف
+                      {n}
                     </option>
                   ))}
                 </select>
-                <Button size="tiny" onClick={() => setPage(current - 1)} disabled={current <= 1}>
+                <Button size="tiny" onClick={() => goPage(current - 1)} disabled={current <= 1}>
                   قبلی
                 </Button>
                 <span className="num">
@@ -212,7 +262,7 @@ export function DataTable<T extends { id: number | string }>({
                 </span>
                 <Button
                   size="tiny"
-                  onClick={() => setPage(current + 1)}
+                  onClick={() => goPage(current + 1)}
                   disabled={current >= pageCount}
                 >
                   بعدی

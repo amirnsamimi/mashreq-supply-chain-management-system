@@ -20,7 +20,7 @@ export function ImportForm() {
         <span className="text-sm font-medium">
           {fileName || "فایل اکسل را انتخاب کنید"}
         </span>
-        <span className="text-xs text-[var(--geist-tertiary)]">فقط xlsx. — حداکثر ۱۵ مگابایت</span>
+        <span className="text-xs text-[var(--geist-tertiary)]">فقط xlsx. — حداکثر 15 مگابایت</span>
         <input
           type="file"
           name="file"

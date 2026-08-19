@@ -21,6 +21,8 @@ const map: Record<string, BadgeTone> = {
   "ویرایش": "blue",
   "حذف": "red",
   "ورود داده": "purple",
+  "ورود": "gray",
+  "خروج": "gray",
   "کم‌فروش": "gray",
 };
 

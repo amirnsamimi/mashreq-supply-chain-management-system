@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireAuth } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import {
   getInvoice,
   listAllocationsForItem,
@@ -26,7 +26,7 @@ export default async function InvoicePage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const me = await requireAuth();
+  const me = await requirePermission("invoices");
   const id = Number((await params).id);
   const inv = await getInvoice(id);
   if (!inv) notFound();
@@ -48,6 +48,7 @@ export default async function InvoicePage({
     <Page
       active="/invoices"
       user={`${me.first_name} ${me.last_name}`}
+      permissions={me.permissions}
       title={
         <span className="flex flex-wrap items-center gap-3">
           فاکتور {inv.invoice_no}
@@ -91,6 +92,7 @@ export default async function InvoicePage({
           invoiceId={id}
           items={items}
           products={products}
+          currency={cur}
           shipments={shipments.map((s) => ({
             id: s.id,
             shipment_no: s.shipment_no,

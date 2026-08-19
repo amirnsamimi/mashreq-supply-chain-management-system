@@ -47,11 +47,13 @@ export function ItemsCard({
   items,
   shipments,
   products,
+  currency,
 }: {
   invoiceId: number;
   items: Item[];
   shipments: ShipmentOption[];
   products: Product[];
+  currency: string;
 }) {
   const [shipFor, setShipFor] = useState<Item | null>(null);
 
@@ -130,7 +132,7 @@ export function ItemsCard({
         )}
 
         <div className="border-t border-[var(--geist-border)] p-4">
-          <AddItemForm invoiceId={invoiceId} products={products} />
+          <AddItemForm invoiceId={invoiceId} products={products} currency={currency} />
         </div>
       </Card>
 
@@ -141,10 +143,20 @@ export function ItemsCard({
 
 
 /** افزودن قلم با انتخاب کالا از فهرست تعریف‌شده */
-function AddItemForm({ invoiceId, products }: { invoiceId: number; products: Product[] }) {
+function AddItemForm({
+  invoiceId,
+  products,
+  currency,
+}: {
+  invoiceId: number;
+  products: Product[];
+  currency: string;
+}) {
   const [productId, setProductId] = useState("");
   const selected = products.find((p) => String(p.id) === productId);
   const active = products.filter((p) => p.is_active || String(p.id) === productId);
+  // قیمت مرجع فقط وقتی پیشنهاد می‌شود که ارزش با ارز این فاکتور یکی باشد
+  const priceMatches = selected ? selected.currency === currency : false;
 
   if (products.length === 0) {
     return (
@@ -173,7 +185,8 @@ function AddItemForm({ invoiceId, products }: { invoiceId: number; products: Pro
           options={active.map((p) => ({
             value: String(p.id),
             label: `${p.sku} — ${p.name}`,
-            hint: p.last_price === null ? undefined : money(p.last_price),
+            hint:
+              p.last_price === null ? undefined : `${money(p.last_price)} ${p.currency}`,
           }))}
           value={productId}
           onChange={setProductId}
@@ -183,17 +196,32 @@ function AddItemForm({ invoiceId, products }: { invoiceId: number; products: Pro
       <div className="flex items-end gap-2">
         <NumberInput
           key={productId}
-          label="قیمت واحد"
+          label={`قیمت واحد (${currency})`}
           name="unit_price"
-          defaultValue={selected?.last_price ?? 0}
+          defaultValue={priceMatches ? selected?.last_price ?? 0 : 0}
         />
         <Submit disabled={!productId}>افزودن</Submit>
       </div>
       {selected && (
-        <p className="text-xs text-[var(--geist-tertiary)] sm:col-span-4">
-          {selected.name}
-          {selected.unit ? ` — واحد: ${selected.unit}` : ""}
-          {selected.last_price !== null ? ` — آخرین قیمت: ${money(selected.last_price)}` : ""}
+        <p className="text-xs sm:col-span-4">
+          <span className="text-[var(--geist-tertiary)]">
+            {selected.name}
+            {selected.brand ? ` — برند: ${selected.brand}` : ""}
+            {selected.unit ? ` — واحد: ${selected.unit}` : ""}
+          </span>
+          {selected.last_price !== null &&
+            (priceMatches ? (
+              <span className="text-[var(--geist-tertiary)]">
+                {" "}
+                — قیمت مرجع: {money(selected.last_price)} {selected.currency}
+              </span>
+            ) : (
+              <span className="text-[var(--geist-amber-text)]">
+                {" "}
+                — قیمت مرجع این کالا به {selected.currency} است ولی این فاکتور به {currency}؛ قیمت را
+                خودتان وارد کنید.
+              </span>
+            ))}
         </p>
       )}
     </ActionForm>

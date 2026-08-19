@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import type { Invoice, PaymentRow } from "@/lib/queries";
+import type { Paged } from "@/lib/paging";
 import { money } from "@/lib/format";
 import { createPayment, deletePayment } from "@/lib/actions";
 import { PAY_METHODS } from "@/lib/lists";
@@ -25,12 +26,13 @@ import { statusTone } from "@/lib/tones";
 import { DateText } from "@/components/DateText";
 
 export function PaymentsClient({
-  payments,
+  page,
   invoices,
 }: {
-  payments: PaymentRow[];
+  page: Paged<PaymentRow>;
   invoices: Invoice[];
 }) {
+  const payments = page.rows;
   const [open, setOpen] = useState(false);
 
   const columns: Column<PaymentRow>[] = [
@@ -39,7 +41,7 @@ export function PaymentsClient({
       header: "تاریخ پرداخت",
       value: (r) => r.payment_date,
       render: (r) => <DateText value={r.payment_date} />,
-      total: (rows) => `${rows.length} پرداخت`,
+      total: (rows) => `جمع این صفحه (${rows.length} پرداخت)`,
     },
     {
       key: "invoice_no",
@@ -107,6 +109,7 @@ export function PaymentsClient({
       <DataTable
         rows={payments}
         columns={columns}
+        server={page}
         searchPlaceholder="جست‌وجو در فاکتور، فروشنده، روش یا مرجع…"
         emptyTitle="هنوز پرداختی ثبت نشده است"
         emptyHint="با دکمه «ثبت پرداخت» شروع کنید"

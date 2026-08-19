@@ -2,6 +2,11 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "crypto";
 import { sql } from "./db";
+import {
+  effectivePermissions,
+  type PermissionKey,
+  type Role,
+} from "./permissions";
 
 const COOKIE = "khanum_session";
 const MAX_AGE = 60 * 60 * 24 * 30; // ۳۰ روز
@@ -11,6 +16,8 @@ export type SessionUser = {
   phone: string;
   first_name: string;
   last_name: string;
+  role: Role;
+  permissions: PermissionKey[];
 };
 
 /* ---------- رمز عبور: scrypt با نمک تصادفی ---------- */
@@ -70,15 +77,34 @@ export async function currentUser(): Promise<SessionUser | null> {
   const id = unsign(token);
   if (id === null) return null;
   const rows = await sql`
-    select id, phone, first_name, last_name
+    select id, phone, first_name, last_name, role, permissions
     from users where id = ${id} and is_active
   `;
-  return rows.length ? (rows[0] as SessionUser) : null;
+  if (!rows.length) return null;
+  const r = rows[0];
+  return {
+    id: Number(r.id),
+    phone: String(r.phone),
+    first_name: String(r.first_name),
+    last_name: String(r.last_name),
+    role: String(r.role) as Role,
+    permissions: effectivePermissions(String(r.role), r.permissions),
+  };
 }
 
 export async function requireAuth(): Promise<SessionUser> {
   const user = await currentUser();
   if (!user) redirect("/login");
+  return user;
+}
+
+/**
+ * دسترسی به یک بخش را الزامی می‌کند.
+ * کاربر بدون دسترسی به داشبورد برمی‌گردد، نه صفحه ورود.
+ */
+export async function requirePermission(key: PermissionKey): Promise<SessionUser> {
+  const user = await requireAuth();
+  if (!user.permissions.includes(key)) redirect("/?denied=" + key);
   return user;
 }
 

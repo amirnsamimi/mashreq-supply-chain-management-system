@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireAuth } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { getShipment, listAllocationsForShipment, listOpenItems } from "@/lib/queries";
 import { money, qty as fq } from "@/lib/format";
 import { Page } from "@/components/Nav";
@@ -15,7 +15,7 @@ export default async function ShipmentPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const me = await requireAuth();
+  const me = await requirePermission("shipments");
   const id = Number((await params).id);
   const sh = await getShipment(id);
   if (!sh) notFound();
@@ -27,6 +27,7 @@ export default async function ShipmentPage({
     <Page
       active="/shipments"
       user={`${me.first_name} ${me.last_name}`}
+      permissions={me.permissions}
       title={
         <span className="flex items-center gap-3">
           پارت {sh.shipment_no}

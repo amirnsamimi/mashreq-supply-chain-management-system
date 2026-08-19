@@ -1,5 +1,6 @@
-import { requireAuth } from "@/lib/auth";
-import { listAllPayments, listInvoices } from "@/lib/queries";
+import { requirePermission } from "@/lib/auth";
+import { PAYMENT_SORTS, listInvoices, listPaymentsPaged } from "@/lib/queries";
+import { parseParams } from "@/lib/paging";
 import { money } from "@/lib/format";
 import { Page } from "@/components/Nav";
 import { Stat } from "@/components/geist";
@@ -7,9 +8,14 @@ import { NewPaymentTrigger, PaymentsClient } from "./PaymentsClient";
 
 export const dynamic = "force-dynamic";
 
-export default async function PaymentsPage() {
-  const me = await requireAuth();
-  const payments = await listAllPayments();
+export default async function PaymentsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const me = await requirePermission("payments");
+  const params = parseParams(await searchParams, PAYMENT_SORTS, "payment_date");
+  const payments = await listPaymentsPaged(params);
   const invoices = await listInvoices();
 
   // جمع‌ها به تفکیک ارز، چون جمع کردن ارزهای مختلف بی‌معناست
@@ -28,10 +34,11 @@ export default async function PaymentsPage() {
       active="/payments"
       title="پرداخت‌ها"
       user={`${me.first_name} ${me.last_name}`}
+      permissions={me.permissions}
       action={<NewPaymentTrigger invoices={invoices} />}
     >
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="تعداد پرداخت‌ها" value={payments.length} />
+        <Stat label="تعداد پرداخت‌ها" value={payments.total} />
         <Stat
           label="فاکتورهای سررسید گذشته"
           value={overdue.length}
@@ -50,7 +57,7 @@ export default async function PaymentsPage() {
       </div>
 
       <div className="mt-6">
-        <PaymentsClient payments={payments} invoices={invoices} />
+        <PaymentsClient page={payments} invoices={invoices} />
       </div>
     </Page>
   );

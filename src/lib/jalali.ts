@@ -113,8 +113,8 @@ export function isoToJalaliString(iso: string): string {
 /** "1404/01/26" یا "۱۴۰۴-۱-۲۶" → "2025-04-15" (در صورت نامعتبر بودن، null) */
 export function jalaliStringToIso(input: string): string | null {
   const latin = input
-    .replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)))
-    .replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
+    .replace(/[\u06F0-\u06F9]/g, (d) => String(d.charCodeAt(0) - 0x06f0))
+    .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660));
   const parts = latin.split(/[^\d]+/).filter(Boolean).map(Number);
   if (parts.length !== 3) return null;
   const [jy, jm, jd] = parts;

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAuth } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { listNotifications, listRules, lastRun } from "@/lib/notifications";
 import { Page } from "@/components/Nav";
 import { Button, Card, Note } from "@/components/geist";
@@ -8,7 +8,7 @@ import { NotificationList, RunNowButton } from "./NotificationsClient";
 export const dynamic = "force-dynamic";
 
 export default async function NotificationsPage() {
-  const me = await requireAuth();
+  const me = await requirePermission("notifications");
   const notifications = await listNotifications();
   const rules = await listRules();
   const last = await lastRun();
@@ -19,6 +19,7 @@ export default async function NotificationsPage() {
       active="/notifications"
       title="اعلان‌ها"
       user={`${me.first_name} ${me.last_name}`}
+      permissions={me.permissions}
       action={
         <>
           <RunNowButton />
@@ -32,8 +33,8 @@ export default async function NotificationsPage() {
         <Card>
           <div className="p-4">
             <Note type="warning" title="هنوز قالبی نساخته‌اید">
-              اعلان‌ها از روی قالب‌هایی ساخته می‌شوند که خودتان تعریف می‌کنید — مثلاً «۳ روز مانده به
-              سررسید» یا «۱۰ روز از خروج پارت گذشته و هنوز نرسیده».{" "}
+              اعلان‌ها از روی قالب‌هایی ساخته می‌شوند که خودتان تعریف می‌کنید — مثلاً «3 روز مانده به
+              سررسید» یا «10 روز از خروج پارت گذشته و هنوز نرسیده».{" "}
               <Link href="/notifications/rules" className="underline">
                 ساخت اولین قالب
               </Link>
@@ -50,7 +51,7 @@ export default async function NotificationsPage() {
           dateStyle: "short",
           timeStyle: "short",
         }).format(new Date(last))}`}
-        . بررسی خودکار هر ۱۰ دقیقه یک‌بار هنگام باز بودن برنامه انجام می‌شود.
+        . بررسی خودکار هر 10 دقیقه یک‌بار هنگام باز بودن برنامه انجام می‌شود.
       </p>
     </Page>
   );

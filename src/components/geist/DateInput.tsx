@@ -16,10 +16,10 @@ import { controlBase, controlBorder, FieldError, Label } from "./Input";
 import { Button } from "./Button";
 
 const pad = (n: number) => String(n).padStart(2, "0");
-const faNum = (n: number | string) => String(n).replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)]);
+/** رقم فارسی و عربی را به لاتین تبدیل می‌کند تا کاربر با هر صفحه‌کلیدی بتواند تایپ کند */
 const toLatin = (s: string) =>
-  s.replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)))
-   .replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
+  s.replace(/[\u06F0-\u06F9]/g, (d) => String(d.charCodeAt(0) - 0x06f0))
+   .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660));
 
 export type Calendar = "jalali" | "gregorian";
 const CAL_KEY = "khanum-calendar";
@@ -28,7 +28,7 @@ const GREGORIAN_MONTHS = [
   "ژانویه", "فوریه", "مارس", "آوریل", "مه", "ژوئن",
   "ژوئیه", "اوت", "سپتامبر", "اکتبر", "نوامبر", "دسامبر",
 ];
-/** ۰=یکشنبه … ۶=شنبه */
+/** 0=یکشنبه … 6=شنبه */
 const GREGORIAN_WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
 function gregorianMonthLength(gy: number, gm: number) {
@@ -170,7 +170,7 @@ export function DateInput({
   const weekdays = cal === "jalali" ? WEEKDAYS : GREGORIAN_WEEKDAYS;
   const monthTitle =
     cal === "jalali"
-      ? `${JALALI_MONTHS[view.jm - 1]} ${faNum(view.jy)}`
+      ? `${JALALI_MONTHS[view.jm - 1]} ${view.jy}`
       : `${GREGORIAN_MONTHS[view.gm - 1]} ${view.gy}`;
 
   function isoOfDay(day: number) {
@@ -181,7 +181,7 @@ export function DateInput({
     return `${view.gy}-${pad(view.gm)}-${pad(day)}`;
   }
 
-  const placeholder = cal === "jalali" ? "۱۴۰۴/۰۱/۰۱" : "2025-03-21";
+  const placeholder = cal === "jalali" ? "1404/01/01" : "2025-03-21";
 
   return (
     <div className="w-full" ref={box}>
@@ -278,7 +278,7 @@ export function DateInput({
                           : "hover:bg-[var(--geist-gray-100)]"
                     }`}
                   >
-                    {cal === "jalali" ? faNum(d) : d}
+                    {d}
                   </button>
                 );
               })}

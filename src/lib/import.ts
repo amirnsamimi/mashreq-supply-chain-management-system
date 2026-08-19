@@ -76,7 +76,7 @@ function pick(row: Record<string, unknown>, ...names: string[]): unknown {
 function num(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null;
   const cleaned = String(v)
-    .replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)))
+    .replace(/[\u06F0-\u06F9]/g, (d) => String(d.charCodeAt(0) - 0x06f0))
     .replace(/[,٬\s]/g, "");
   const n = parseFloat(cleaned);
   return Number.isFinite(n) ? n : null;
@@ -96,7 +96,7 @@ function date(v: unknown): string | null {
   const s = String(v).trim();
   // شمسی: سال چهار رقمی ۱۳xx یا ۱۴xx
   if (/^[۰-۹0-9]{4}[^\d][۰-۹0-9]{1,2}[^\d][۰-۹0-9]{1,2}$/.test(s)) {
-    const first = parseInt(s.replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))).slice(0, 4), 10);
+    const first = parseInt(s.replace(/[\u06F0-\u06F9]/g, (d) => String(d.charCodeAt(0) - 0x06f0)).slice(0, 4), 10);
     if (first > 1200 && first < 1600) return jalaliStringToIso(s);
     if (first > 1900 && first < 2200) {
       const parts = s.split(/[^\d]/).map(Number);
@@ -186,9 +186,11 @@ export async function importWorkbook(
         continue;
       }
       const [row] = await sql`
-        insert into products (sku, name, category, unit, last_price, notes)
-        values (${sku}, ${text(pick(r, "نام کالا")) ?? sku}, ${text(pick(r, "دسته"))},
-                ${text(pick(r, "واحد"))}, ${num(pick(r, "آخرین قیمت واحد"))}, ${text(pick(r, "توضیحات"))})
+        insert into products (sku, name, brand, category, unit, last_price, currency, notes)
+        values (${sku}, ${text(pick(r, "نام کالا")) ?? sku}, ${text(pick(r, "برند"))},
+                ${text(pick(r, "دسته"))}, ${text(pick(r, "واحد"))},
+                ${num(pick(r, "قیمت مرجع", "آخرین قیمت واحد"))},
+                ${text(pick(r, "ارز قیمت", "ارز")) ?? "RMB"}, ${text(pick(r, "توضیحات"))})
         returning id
       `;
       productIdBySku.set(sku, Number(row.id));
@@ -201,12 +203,17 @@ export async function importWorkbook(
   }
 
   /** کالایی که در شیت کالاها نبوده ولی در اقلام آمده، خودکار ساخته می‌شود */
-  async function ensureProduct(sku: string, name: string | null, price: number | null) {
+  async function ensureProduct(
+    sku: string,
+    name: string | null,
+    price: number | null,
+    currency: string | null
+  ) {
     const known = productIdBySku.get(sku);
     if (known) return known;
     const [row] = await sql`
-      insert into products (sku, name, last_price)
-      values (${sku}, ${name ?? sku}, ${price})
+      insert into products (sku, name, last_price, currency)
+      values (${sku}, ${name ?? sku}, ${price}, ${currency ?? "RMB"})
       on conflict (sku) do update set sku = excluded.sku
       returning id
     `;
@@ -276,7 +283,13 @@ export async function importWorkbook(
         warnings.push(`قلم ${sku} در فاکتور ${invNo} از قبل وجود داشت و دست‌نخورده ماند`);
         continue;
       }
-      const productId = await ensureProduct(sku, text(pick(r, "شرح کالا")), price);
+      const [invCur] = await sql`select currency from invoices where id = ${invoiceId}`;
+      const productId = await ensureProduct(
+        sku,
+        text(pick(r, "شرح کالا")),
+        price,
+        invCur ? String(invCur.currency) : null
+      );
       const [product] = await sql`select name from products where id = ${productId}`;
       const [row] = await sql`
         insert into invoice_items (invoice_id, product_id, sku, description, qty, unit_price, notes)

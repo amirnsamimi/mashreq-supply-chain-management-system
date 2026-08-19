@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import type { Invoice, Supplier } from "@/lib/queries";
+import type { Paged } from "@/lib/paging";
 import { money } from "@/lib/format";
 import { createInvoice } from "@/lib/actions";
 import { CURRENCIES } from "@/lib/lists";
@@ -13,12 +14,13 @@ import { statusTone } from "@/lib/tones";
 import { DateText } from "@/components/DateText";
 
 export function InvoicesClient({
-  invoices,
+  page,
   suppliers,
 }: {
-  invoices: Invoice[];
+  page: Paged<Invoice>;
   suppliers: Supplier[];
 }) {
+  const invoices = page.rows;
   const [open, setOpen] = useState(false);
 
   const columns: Column<Invoice>[] = [
@@ -31,7 +33,7 @@ export function InvoicesClient({
           {r.invoice_no}
         </Link>
       ),
-      total: (rows) => `جمع ${rows.length} فاکتور`,
+      total: (rows) => `جمع این صفحه (${rows.length} فاکتور)`,
     },
     { key: "supplier", header: "فروشنده", value: (r) => r.supplier },
     { key: "invoice_date", header: "تاریخ", value: (r) => r.invoice_date, render: (r) => <DateText value={r.invoice_date} /> },
@@ -102,6 +104,7 @@ export function InvoicesClient({
         <DataTable
           rows={invoices}
           columns={columns}
+          server={page}
           searchPlaceholder="جست‌وجو در فاکتورها…"
           emptyTitle="هنوز فاکتوری ثبت نشده است"
           emptyHint="با دکمه «فاکتور جدید» شروع کنید"

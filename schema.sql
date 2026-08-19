@@ -90,9 +90,12 @@ create table if not exists products (
   id          serial primary key,
   sku         text not null unique,
   name        text not null,
+  brand       text,
   category    text,
   unit        text,
+  -- قیمت مرجع همیشه همراه ارز خودش معنا دارد
   last_price  numeric(18,4),
+  currency    text not null default 'RMB',
   notes       text,
   is_active   boolean not null default true,
   created_at  timestamptz default now()
@@ -156,3 +159,7 @@ create table if not exists app_state (
   value      text,
   updated_at timestamptz not null default now()
 );
+
+-- نقش و دسترسی کاربران
+alter table users add column if not exists role text not null default 'staff';
+alter table users add column if not exists permissions jsonb;

@@ -7,7 +7,7 @@ import { Spinner } from "./Spinner";
 export type ButtonType = "primary" | "secondary" | "tertiary" | "error" | "warning";
 export type ButtonSize = "tiny" | "small" | "medium" | "large";
 
-/* اندازه‌های استاندارد Geist: ۲۴ / ۳۲ / ۴۰ / ۴۸ پیکسل */
+/* اندازه‌های استاندارد Geist: 24 / 32 / 40 / 48 پیکسل */
 const sizes: Record<ButtonSize, string> = {
   tiny: "h-6 px-1.5 text-xs gap-1 rounded-[var(--geist-radius)]",
   small: "h-8 px-3 text-sm gap-1.5 rounded-[var(--geist-radius)]",

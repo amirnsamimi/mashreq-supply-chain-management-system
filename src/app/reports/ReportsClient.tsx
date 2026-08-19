@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import type { ReportData } from "@/lib/reports";
 import { money } from "@/lib/format";
+import { useCalendar } from "@/components/useCalendar";
 import {
   BaseChart,
   ChartBox,
@@ -13,7 +14,7 @@ import {
 } from "@/components/geist";
 import { Card, Empty } from "@/components/geist";
 
-const fa = new Intl.NumberFormat("fa-IR", { maximumFractionDigits: 1 });
+const fa = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
 
 function SectionTitle({ children, hint }: { children: string; hint?: string }) {
   return (
@@ -32,6 +33,9 @@ export function ReportsClient({
   currency: string;
 }) {
   const mode = useChartMode();
+  const calendar = useCalendar();
+  // برچسب ماه‌ها با تقویمی که کاربر انتخاب کرده هماهنگ می‌شود
+  const monthLabels = report.months.map((m) => m[calendar]);
   const series = SERIES[mode];
   const ramp = RAMP[mode];
   const router = useRouter();
@@ -117,12 +121,12 @@ export function ReportsClient({
           {/* خرید و پرداخت — دو سری، پس افسانه لازم است */}
           <ChartBox
             title="خرید و پرداخت به تفکیک ماه"
-            subtitle={`مبالغ به ${currency} — ۱۲ ماه گذشته`}
+            subtitle={`مبالغ به ${currency} — 12 ماه گذشته`}
           >
             <BaseChart
               type="bar"
               data={{
-                labels: report.months,
+                labels: monthLabels,
                 datasets: [
                   {
                     label: "خرید",
@@ -153,7 +157,7 @@ export function ReportsClient({
           <ChartBox
             title="سن بدهی"
             subtitle={`مانده پرداخت‌نشده به ${currency}، بر اساس فاصله از سررسید`}
-            footer="ستون‌ها از راست به چپ: از سررسیدنشده تا بیش از ۶۰ روز دیرکرد."
+            footer="ستون‌ها از راست به چپ: از سررسیدنشده تا بیش از 60 روز دیرکرد."
           >
             <BaseChart
               type="bar"
@@ -301,7 +305,7 @@ export function ReportsClient({
             <BaseChart
               type="line"
               data={{
-                labels: report.months,
+                labels: monthLabels,
                 datasets: [
                   {
                     label: "هزینه حمل",
@@ -364,7 +368,7 @@ export function ReportsClient({
             <BaseChart
               type="line"
               data={{
-                labels: report.months,
+                labels: monthLabels,
                 datasets: [
                   {
                     label: "ارسال‌شده",
@@ -447,7 +451,10 @@ export function ReportsClient({
 
       {/* نمای جدولی — الزام دسترس‌پذیری برای رنگ‌هایی که کنتراستشان پایین است */}
       <div className="mt-8">
-        <Card title="همان داده‌ها به‌صورت جدول">
+        <Card
+          title="خلاصه ماهانه"
+          footer="همان اعداد نمودارهای بالا — برای وقتی که به عدد دقیق یا کپی‌کردن نیاز دارید."
+        >
           <div className="scroll-x">
             <table>
               <thead>
@@ -459,7 +466,7 @@ export function ReportsClient({
                 </tr>
               </thead>
               <tbody>
-                {report.months.map((m, i) => (
+                {monthLabels.map((m, i) => (
                   <tr key={m}>
                     <td>{m}</td>
                     <td className="num">{money(report.purchasesByMonth[i])}</td>

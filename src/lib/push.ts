@@ -1,7 +1,5 @@
 import "server-only";
 
-import webpush from "web-push";
-
 import { sql } from "./db";
 import type { Severity } from "./notification-types";
 
@@ -18,16 +16,30 @@ const PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY ?? "";
 // mailto یا آدرس سایت؛ سرویس‌های پوش برای تماس در زمان مشکل می‌خواهندش
 const SUBJECT = process.env.VAPID_SUBJECT || "mailto:admin@example.com";
 
+/**
+ * true یعنی کلیدها هست و می‌شود پوش فرستاد.
+ * فقط متغیرهای محیطی را نگاه می‌کند و هیچ ماژولی بار نمی‌کند، تا صفحه‌ای
+ * که صرفاً وضعیت را می‌پرسد کتابخانه پوش را وارد نکند.
+ */
+export function pushEnabled(): boolean {
+  return Boolean(PUBLIC_KEY && PRIVATE_KEY);
+}
+
 let configured = false;
 
-/** true یعنی کلیدها هست و می‌شود پوش فرستاد */
-export function pushEnabled(): boolean {
-  if (!PUBLIC_KEY || !PRIVATE_KEY) return false;
+/**
+ * web-push فقط در لحظه ارسال بار می‌شود.
+ * این کتابخانه CommonJS است و require‌های داخلی دارد؛ وارد کردنش در بالای
+ * فایل باعث می‌شد هر صفحه‌ای که این ماژول را import می‌کند آن را هم بکشد.
+ */
+async function loadWebPush() {
+  const mod = await import("web-push");
+  const webpush = mod.default ?? mod;
   if (!configured) {
     webpush.setVapidDetails(SUBJECT, PUBLIC_KEY, PRIVATE_KEY);
     configured = true;
   }
-  return true;
+  return webpush;
 }
 
 export type PushSubscriptionInput = {
@@ -81,6 +93,8 @@ export async function sendToAll(payload: PushPayload): Promise<{ sent: number; r
 
   const rows = await sql`select endpoint, p256dh, auth from push_subscriptions`;
   if (rows.length === 0) return { sent: 0, removed: 0 };
+
+  const webpush = await loadWebPush();
 
   const body = JSON.stringify(payload);
   let sent = 0;

@@ -1,6 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // web-push یک بسته CommonJS با require‌های داخلی است؛ بسته‌بندی‌اش داخل
+  // خروجی سرور روی Vercel شکننده است، پس بیرون از باندل نگهش می‌داریم.
+  serverExternalPackages: ["web-push"],
+
   async headers() {
     return [
       {

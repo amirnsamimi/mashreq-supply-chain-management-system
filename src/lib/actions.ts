@@ -23,6 +23,13 @@ import {
   type PermissionKey,
 } from "./permissions";
 import { runRules, TRIGGERS } from "./notifications";
+import { activeShare, newToken } from "./share";
+import {
+  finishGuide,
+  markGuideStarted,
+  resetGuide,
+  saveGuideStep,
+} from "./guideState";
 
 /** نتیجهٔ یکنواخت فرم‌ها: پیام خطا یا موفقیت */
 export type FormResult = { error?: string; ok?: string } | null;
@@ -860,4 +867,99 @@ export async function updateUserAccess(_prev: FormResult, fd: FormData): Promise
   revalidatePath("/users");
   revalidatePath("/", "layout");
   return ok("دسترسی‌ها ذخیره شد");
+}
+
+/* ================= لینک اشتراک فاکتور ================= */
+
+export async function createShareLink(_prev: FormResult, fd: FormData): Promise<FormResult> {
+  const me = await requireAuth();
+  const invoiceId = Number(fd.get("invoice_id"));
+
+  const [inv] = await sql`select invoice_no from invoices where id = ${invoiceId}`;
+  if (!inv) return err("فاکتور پیدا نشد");
+
+  const existing = await activeShare(invoiceId);
+  if (existing) return ok("این فاکتور از قبل لینک فعال دارد");
+
+  const token = newToken();
+  await sql`
+    insert into invoice_shares (invoice_id, token, created_by)
+    values (${invoiceId}, ${token}, ${me.id})
+  `;
+  await logAudit(me, "ایجاد", "share", invoiceId, `لینک اشتراک برای فاکتور ${inv.invoice_no}`);
+  revalidatePath(`/invoices/${invoiceId}`);
+  return ok("لینک ساخته شد");
+}
+
+/** لینک قبلی باطل و لینک تازه‌ای ساخته می‌شود */
+export async function rotateShareLink(_prev: FormResult, fd: FormData): Promise<FormResult> {
+  const me = await requireAuth();
+  const invoiceId = Number(fd.get("invoice_id"));
+
+  await sql`
+    update invoice_shares set revoked_at = now()
+    where invoice_id = ${invoiceId} and revoked_at is null
+  `;
+  const token = newToken();
+  await sql`
+    insert into invoice_shares (invoice_id, token, created_by)
+    values (${invoiceId}, ${token}, ${me.id})
+  `;
+  const [inv] = await sql`select invoice_no from invoices where id = ${invoiceId}`;
+  await logAudit(
+    me,
+    "ویرایش",
+    "share",
+    invoiceId,
+    `لینک اشتراک فاکتور ${inv?.invoice_no ?? invoiceId} عوض شد؛ لینک قبلی از کار افتاد`
+  );
+  revalidatePath(`/invoices/${invoiceId}`);
+  return ok("لینک تازه ساخته شد و لینک قبلی دیگر کار نمی‌کند");
+}
+
+export async function revokeShareLink(fd: FormData) {
+  const me = await requireAuth();
+  const invoiceId = Number(fd.get("invoice_id"));
+  await sql`
+    update invoice_shares set revoked_at = now()
+    where invoice_id = ${invoiceId} and revoked_at is null
+  `;
+  const [inv] = await sql`select invoice_no from invoices where id = ${invoiceId}`;
+  await logAudit(
+    me,
+    "حذف",
+    "share",
+    invoiceId,
+    `لینک اشتراک فاکتور ${inv?.invoice_no ?? invoiceId} غیرفعال شد`
+  );
+  revalidatePath(`/invoices/${invoiceId}`);
+}
+
+/* ================= راهنمای گام‌به‌گام ================= */
+
+/** کاربر راهنما را باز کرد */
+export async function guideStartedAction(): Promise<void> {
+  const me = await requireAuth();
+  await markGuideStarted(me.id);
+}
+
+/** ذخیره پیشرفت؛ هر بار که کاربر گام را عوض می‌کند صدا زده می‌شود */
+export async function guideStepAction(step: number): Promise<void> {
+  const me = await requireAuth();
+  await saveGuideStep(me.id, Number.isFinite(step) ? Math.max(0, Math.trunc(step)) : 0);
+}
+
+/** پایان راهنما — skipped یعنی کاربر وسط کار بست */
+export async function guideFinishAction(skipped: boolean): Promise<void> {
+  const me = await requireAuth();
+  await finishGuide(me.id, Boolean(skipped));
+  revalidatePath("/guide");
+}
+
+/** از نو دیدن راهنما، مثل بار اول */
+export async function guideResetAction(): Promise<FormResult> {
+  const me = await requireAuth();
+  await resetGuide(me.id);
+  revalidatePath("/guide");
+  return ok("راهنما بازنشانی شد؛ از گام اول شروع می‌شود");
 }

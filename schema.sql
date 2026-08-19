@@ -163,3 +163,28 @@ create table if not exists app_state (
 -- نقش و دسترسی کاربران
 alter table users add column if not exists role text not null default 'staff';
 alter table users add column if not exists permissions jsonb;
+
+-- لینک اشتراک عمومی فاکتور
+create table if not exists invoice_shares (
+  id             serial primary key,
+  invoice_id     integer not null references invoices(id) on delete cascade,
+  token          text not null unique,
+  created_by     integer references users(id) on delete set null,
+  created_at     timestamptz not null default now(),
+  revoked_at     timestamptz,
+  view_count     integer not null default 0,
+  last_viewed_at timestamptz
+);
+create unique index if not exists idx_share_active
+  on invoice_shares(invoice_id) where revoked_at is null;
+
+-- وضعیت راهنمای گام‌به‌گام برای هر کاربر
+create table if not exists user_guide (
+  user_id      integer primary key references users(id) on delete cascade,
+  last_step    integer not null default 0,
+  seen_count   integer not null default 0,
+  started_at   timestamptz,
+  completed_at timestamptz,
+  skipped      boolean not null default false,
+  updated_at   timestamptz not null default now()
+);

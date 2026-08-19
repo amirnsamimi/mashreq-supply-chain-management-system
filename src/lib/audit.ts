@@ -16,6 +16,7 @@ export const ENTITIES = {
   user: "کاربر",
   import: "ورود داده",
   session: "نشست",
+  share: "لینک اشتراک",
 } as const;
 
 export type EntityKey = keyof typeof ENTITIES;

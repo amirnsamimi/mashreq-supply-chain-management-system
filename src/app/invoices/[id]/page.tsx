@@ -11,12 +11,15 @@ import {
   listSuppliers,
 } from "@/lib/queries";
 import { listAudit } from "@/lib/audit";
+import { activeShare } from "@/lib/share";
+import { baseUrl } from "@/lib/base-url";
 import { money, jalali } from "@/lib/format";
 import { Page } from "@/components/Nav";
 import { Badge, Card, Stat } from "@/components/geist";
 import { statusTone } from "@/lib/tones";
 import { InvoiceEditCard, ItemShipmentsCard, ItemsCard } from "./InvoiceDetail";
 import { InvoicePaymentsCard } from "./InvoicePayments";
+import { ShareCard } from "./ShareCard";
 import { DateText } from "@/components/DateText";
 
 export const dynamic = "force-dynamic";
@@ -37,6 +40,8 @@ export default async function InvoicePage({
   const products = await listProducts();
   const suppliers = await listSuppliers();
   const history = await listAudit(15, "invoice", id);
+  const share = await activeShare(id);
+  const appUrl = await baseUrl();
   const allocsByItem = Object.fromEntries(
     await Promise.all(
       items.map(async (it) => [it.id, await listAllocationsForItem(it.id)] as const)
@@ -115,6 +120,10 @@ export default async function InvoicePage({
           currency={cur}
         />
         <InvoiceEditCard inv={inv} suppliers={suppliers} />
+      </div>
+
+      <div className="mt-6">
+        <ShareCard invoiceId={id} invoiceNo={inv.invoice_no} share={share} baseUrl={appUrl} />
       </div>
 
       {history.length > 0 && (

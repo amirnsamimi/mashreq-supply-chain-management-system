@@ -38,13 +38,21 @@ This app replaces that spreadsheet. Nothing calculated is ever stored — balanc
 
 **Audit trail** — who changed what, and when, on every create, edit, and delete.
 
+**Roles and permissions** — four roles (admin, business owner, manager, staff) each with a default set of section permissions, overridable per user. Enforced in the nav, on every page server-side, and in the actions themselves.
+
+**Reports** — purchases vs payments per month, payables aging, outstanding per supplier, top suppliers and products, item pipeline, freight over time, carrier scorecard. Charts are Chart.js with a colorblind-validated palette and a table view of the same numbers.
+
+**Notifications** — you define the rules: "3 days before due date", "10 days since departure and still not received", "shipment received short". The engine runs on a throttle while the app is in use and de-duplicates, so a rule fires once per situation rather than once per page load.
+
+**Public share links** — each invoice can be given a public link showing only its status: supplier, dates, items and quantities, shipments, and statuses. **Every amount is masked** unless the viewer is a signed-in user — masked values are never sent to the browser at all, not merely hidden with CSS. Links can be rotated or disabled at any time.
+
 **Users** — sign in with mobile number and password. Passwords are hashed with scrypt and a random salt; sessions are HMAC-signed httpOnly cookies.
 
 ## Screens
 
 | Route | What it does |
 |---|---|
-| `/` | Dashboard — counters, totals per currency, invoices needing attention |
+| `/` | Dashboard — what needs action today: overdue, due soon, amount mismatches, shipments in flight |
 | `/suppliers` | Suppliers, with purchase total and outstanding balance each |
 | `/products` | Product catalogue — SKU, name, category, unit, last price |
 | `/invoices` | Invoice list, and per-invoice items, shipments, and payments |
@@ -52,7 +60,10 @@ This app replaces that spreadsheet. Nothing calculated is ever stored — balanc
 | `/shipments` | Shipments, and which items travel in each |
 | `/import` | Upload an Excel workbook; download the template |
 | `/history` | Full audit log |
-| `/users` | User management |
+| `/reports` | Charts and statistics, per currency |
+| `/notifications` | Notification inbox, and `/notifications/rules` to define the rules |
+| `/users` | Users, roles, and permissions |
+| `/s/[token]` | Public, read-only invoice status (no sign-in required) |
 
 Exports live at `/api/export/{suppliers,products,invoices,items,shipments,allocations,payments,history}` and the template at `/api/template`.
 
@@ -85,6 +96,7 @@ Open http://localhost:3000. With no users in the database yet, the sign-in page 
 |---|---|---|
 | `DATABASE_URL` | yes | PostgreSQL connection string. SSL is enabled automatically for any host other than localhost. |
 | `AUTH_SECRET` | yes | Long random string used to sign session cookies. Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. Changing it signs everyone out; passwords are unaffected. |
+| `NEXT_PUBLIC_APP_URL` | no | Public origin used to build invoice share links, e.g. `https://mashreq.example.com`. Leave empty and the origin is derived from the request headers, which is correct in most setups; set it if you sit behind a proxy or CDN. |
 
 ## Deploy
 
@@ -121,6 +133,9 @@ products ──< invoice_items
 | `payments` | payments against an invoice | `invoice_id` |
 | `users` | sign-in accounts | — |
 | `audit_log` | change history | `user_id` |
+| `notification_rules` | user-defined notification templates | — |
+| `notifications` | generated notifications | `rule_id` |
+| `invoice_shares` | public share links | `invoice_id` |
 
 `allocations` is the heart of it: the many-to-many join that lets one item be split across shipments and one shipment carry many invoices. Everything else follows from there.
 
@@ -146,9 +161,18 @@ Jalali ↔ Gregorian conversion in [`src/lib/jalali.ts`](src/lib/jalali.ts) is a
 
 ## Notes and limitations
 
-- **All users have the same permissions.** There are no roles. Anyone who can sign in can edit and delete anything. Add a role column if you need more.
+- **Permissions are per section, not per record.** A user who can see invoices can see all of them; there is no ownership or row-level scoping.
 - **No currency conversion.** Amounts are summed per currency and never mixed. There is no FX rate field.
+- **Notifications are in-app only.** No email or SMS delivery.
 - **Not multi-tenant.** One deployment serves one organisation.
+
+## Notes on the implementation
+
+**Lists are paginated in SQL**, not in the browser: `LIMIT`/`OFFSET` with search and sorting pushed to the database, all reflected in the URL so a view can be linked. Sort columns are whitelisted before they reach SQL.
+
+**Numbers render in Latin digits everywhere.** Persian digits reverse badly on chart canvases and confuse numeric inputs, so display, inputs, and exports all use one format.
+
+**Dates are entered and displayed in Jalali or Gregorian** — the reader picks, and the preference sticks. Storage is always a single canonical ISO date. Display switching costs no JavaScript: both forms are rendered and CSS shows one.
 
 ## راهنمای فارسی
 
@@ -160,11 +184,21 @@ Jalali ↔ Gregorian conversion in [`src/lib/jalali.ts`](src/lib/jalali.ts) is a
 
 **تأمین‌کنندگان و کالاها** یک بار تعریف می‌شوند و بعد در فاکتورها از فهرست انتخاب می‌شوند؛ اگر نامشان را عوض کنید، همه فاکتورهایشان به‌روز می‌شود.
 
-**تاریخ‌ها** را می‌توانید شمسی یا میلادی وارد کنید (انتخاب داخل خود تقویم است)، ولی همیشه به یک شکل واحد در دیتابیس ذخیره می‌شوند.
+**تاریخ‌ها** را می‌توانید شمسی یا میلادی وارد کنید و ببینید (انتخاب کاربر است و می‌ماند)، ولی همیشه به یک شکل واحد در دیتابیس ذخیره می‌شوند. همه اعداد هم با رقم لاتین نمایش داده می‌شوند.
+
+**نقش و دسترسی:** چهار نقش — ادمین، صاحب کسب‌وکار، مدیر، کارشناس — که هرکدام مجموعه دسترسی پیش‌فرض دارند و قابل تغییر دستی‌اند. اولین کاربر سیستم ادمین می‌شود. دسترسی هم در منو، هم در خود صفحه‌ها روی سرور بررسی می‌شود.
+
+**اعلان‌ها:** خودتان قالب می‌سازید («۳ روز مانده به سررسید»، «۱۰ روز از خروج پارت گذشته و نرسیده») و برنامه هنگام کار، خودکار بررسی می‌کند و تکراری نمی‌سازد.
+
+**گزارش‌ها:** نمودار خرید و پرداخت ماهانه، سن بدهی، مانده به تفکیک تأمین‌کننده، تأمین‌کنندگان و کالاهای برتر، چرخه کالا، هزینه حمل و کارنامه کارگوها — همه به تفکیک ارز.
+
+**اشتراک‌گذاری فاکتور:** برای هر فاکتور می‌توانید یک لینک عمومی بسازید که فقط وضعیت را نشان می‌دهد: تأمین‌کننده، تاریخ‌ها، اقلام و تعدادشان، پارت‌های ارسال و وضعیت‌ها. **همه مبالغ پنهان‌اند** مگر بیننده خودش کاربر سیستم و واردشده باشد — مبلغ پنهان اصلاً به مرورگر فرستاده نمی‌شود، نه اینکه با CSS مخفی شود. لینک را هر وقت خواستید عوض یا غیرفعال کنید.
 
 **اکسل:** فایل نمونه را از صفحه «ورود داده» دانلود کنید، پرش کنید و بارگذاری کنید. اگر همان فایل را دوباره بارگذاری کنید داده تکراری ساخته نمی‌شود و برنامه دقیقاً می‌گوید چه چیزی را رد کرده و چرا. خروجی همه جدول‌ها هم با تاریخ شمسی گرفته می‌شود.
 
-**کاربران:** ورود با شماره موبایل و رمز. رمزها با scrypt و نمک تصادفی هش می‌شوند. اولین باری که برنامه بالا می‌آید و هیچ کاربری نیست، صفحه ورود خودش فرم ساخت کاربر اول را نشان می‌دهد. توجه کنید که **همه کاربران دسترسی یکسان دارند** و نقش و سطح دسترسی تعریف نشده است.
+**کاربران:** ورود با شماره موبایل و رمز. رمزها با scrypt و نمک تصادفی هش می‌شوند. اولین باری که برنامه بالا می‌آید و هیچ کاربری نیست، صفحه ورود خودش فرم ساخت کاربر اول را نشان می‌دهد و آن کاربر ادمین می‌شود.
+
+**تاریخچه:** هر ایجاد، ویرایش، حذف، ورود و خروج ثبت می‌شود و در صفحه «تاریخچه» با جست‌وجو و صفحه‌بندی در دسترس است.
 
 راه‌اندازی و متغیرهای محیطی در بخش [Quick start](#quick-start) توضیح داده شده‌اند.
 

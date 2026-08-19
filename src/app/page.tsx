@@ -7,6 +7,9 @@ import { Page } from "@/components/Nav";
 import { DateText } from "@/components/DateText";
 import { Badge, Button, Card, Empty, Stat } from "@/components/geist";
 import { statusTone } from "@/lib/tones";
+import { stepsFor } from "@/lib/guide";
+import { guideState } from "@/lib/guideState";
+import { GuideAutoStart } from "@/components/GuideLauncher";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +18,11 @@ export default async function Home() {
   const invoices = await listInvoices();
   const shipments = await listShipments();
   const notifications = await listNotifications();
+
+  /* راهنما فقط برای کسی که هنوز آن را تمام نکرده و نبسته، خودکار باز می‌شود */
+  const guide = await guideState(me.id);
+  const guideSteps = stepsFor(me.permissions);
+  const showGuide = guide.completed_at === null && !guide.skipped;
 
   /* داشبورد = کارهایی که امروز باید انجام شوند، نه آمار کلی */
   const overdue = invoices.filter((i) => i.payment_status === "سررسید گذشته");
@@ -54,6 +62,13 @@ export default async function Home() {
         </Link>
       }
     >
+      {showGuide && (
+        <GuideAutoStart
+          steps={guideSteps}
+          startAt={Math.min(guide.last_step, Math.max(guideSteps.length - 1, 0))}
+        />
+      )}
+
       {/* شمارنده‌های اقدام‌محور */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <Stat

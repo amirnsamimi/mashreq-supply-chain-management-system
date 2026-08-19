@@ -1,4 +1,5 @@
 import { toGregorian, toJalali, JALALI_MONTHS } from "./jalali";
+import { todayMs } from "./today";
 
 const faDigits = (n: number | string) =>
   String(n).replace(/\d/g, (d) => "0123456789"[Number(d)]);
@@ -125,7 +126,7 @@ export async function buildReport(currency: string, monthCount = 12): Promise<Re
   }
 
   /* سنی‌سازی بدهی */
-  const todayMs = new Date(new Date().toISOString().slice(0, 10)).getTime();
+  const nowMs = todayMs();
   const agingBuckets = [
     { label: "سررسید نشده", min: -Infinity, max: 0 },
     { label: "1 تا 30 روز", min: 1, max: 30 },
@@ -139,7 +140,7 @@ export async function buildReport(currency: string, monthCount = 12): Promise<Re
       aging[0].value += inv.balance;
       continue;
     }
-    const days = Math.round((todayMs - new Date(inv.due_date).getTime()) / 86_400_000);
+    const days = Math.round((nowMs - new Date(inv.due_date).getTime()) / 86_400_000);
     const idx = agingBuckets.findIndex((b) => days >= b.min && days <= b.max);
     aging[idx < 0 ? 0 : idx].value += inv.balance;
   }

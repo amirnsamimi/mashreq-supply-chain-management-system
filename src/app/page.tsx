@@ -3,6 +3,7 @@ import { requirePermission } from "@/lib/auth";
 import { listInvoices, listShipments } from "@/lib/queries";
 import { listNotifications } from "@/lib/notifications";
 import { money } from "@/lib/format";
+import { daysSince } from "@/lib/today";
 import { Page } from "@/components/Nav";
 import { DateText } from "@/components/DateText";
 import { Badge, Button, Card, Empty, Stat } from "@/components/geist";
@@ -20,11 +21,8 @@ export default async function Home() {
   const overdue = invoices.filter((i) => i.payment_status === "سررسید گذشته");
   const dueSoon = invoices.filter((i) => {
     if (i.balance <= 0.005 || !i.due_date) return false;
-    const days = Math.round(
-      (new Date(i.due_date).getTime() - new Date(new Date().toISOString().slice(0, 10)).getTime()) /
-        86_400_000
-    );
-    return days >= 0 && days <= 7;
+    const left = -(daysSince(i.due_date) ?? 0);
+    return left >= 0 && left <= 7;
   });
   const mismatched = invoices.filter((i) => Math.abs(i.diff) > 0.01);
   const inTransit = shipments.filter((s) => s.status === "در مسیر");

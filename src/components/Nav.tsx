@@ -4,6 +4,7 @@ import { runRulesThrottled, unreadCount } from "@/lib/notifications";
 import { CalendarToggle } from "./CalendarToggle";
 import { NavHeight } from "./NavHeight";
 import { ThemeToggle } from "./ThemeToggle";
+import { InstallButton } from "./PWA";
 
 import { PERMISSIONS, type PermissionKey } from "@/lib/permissions";
 
@@ -68,6 +69,7 @@ export async function Nav({
             </Link>
             <CalendarToggle />
             <ThemeToggle />
+            <InstallButton />
             <form action={logoutAction}>
               <button className="text-xs text-[var(--geist-tertiary)] transition hover:text-[var(--geist-foreground)]">
                 خروج

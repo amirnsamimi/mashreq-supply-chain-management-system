@@ -6,7 +6,7 @@ import { headers } from "next/headers";
  * ساخته می‌شود (پشت پروکسی هم درست کار می‌کند).
  */
 export async function baseUrl(): Promise<string> {
-  const configured = process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL;
+  const configured = process.env.NEXT_PUBLIC_APP_URL;
   if (configured) return configured.replace(/\/+$/, "");
 
   const h = await headers();

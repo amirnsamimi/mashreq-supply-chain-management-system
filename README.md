@@ -97,6 +97,8 @@ Open http://localhost:3000. With no users in the database yet, the sign-in page 
 | `DATABASE_URL` | yes | PostgreSQL connection string. SSL is enabled automatically for any host other than localhost. |
 | `AUTH_SECRET` | yes | Long random string used to sign session cookies. Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. Changing it signs everyone out; passwords are unaffected. |
 | `NEXT_PUBLIC_APP_URL` | no | Public origin used to build invoice share links, e.g. `https://mashreq.example.com`. Leave empty and the origin is derived from the request headers, which is correct in most setups; set it if you sit behind a proxy or CDN. |
+| `APP_TIMEZONE` | no | Business timezone, default `Asia/Tehran`. "Today" — for due dates, overdue counts, and notifications — is computed in this zone. Servers run in UTC, so without it a Tehran evening would still count as the previous day. |
+| `DATABASE_POOL_MAX` | no | Max concurrent DB connections per instance, default 5. |
 
 ## Deploy
 
@@ -109,7 +111,16 @@ Any host that runs Next.js and can reach a Postgres database. The path with the 
    ```bash
    DATABASE_URL="<your Neon connection string>" node scripts/init-db.mjs
    ```
-5. Open the deployed URL, create the first user, then add your colleagues under `/users`.
+5. Open the deployed URL, create the first user — that account becomes the admin — then add your colleagues under `/users`.
+
+### Deployment notes
+
+- **Use Neon's pooled connection string** (the host contains `-pooler`) for `DATABASE_URL`. Serverless functions each open their own connections and will exhaust a direct connection limit under load. Keep the direct string for `scripts/init-db.mjs`.
+- **Set `APP_TIMEZONE`** if your business does not run on Tehran time.
+- **`AUTH_SECRET` must differ per environment.** Reusing a development value in production lets anyone who has seen it forge a session cookie.
+- **The build does not need a database.** Connections open on first query, so CI can build without secrets.
+- **Re-running `db:init` is safe** — every statement is `create table if not exists` / `add column if not exists`, so it doubles as the migration step after pulling changes.
+- Sessions last 30 days. Changing `AUTH_SECRET` signs everyone out without touching passwords.
 
 ## Data model
 
@@ -165,6 +176,8 @@ Jalali ↔ Gregorian conversion in [`src/lib/jalali.ts`](src/lib/jalali.ts) is a
 - **No currency conversion.** Amounts are summed per currency and never mixed. There is no FX rate field.
 - **Notifications are in-app only.** No email or SMS delivery.
 - **Not multi-tenant.** One deployment serves one organisation.
+- **No backups are configured.** Whatever your Postgres host provides is what you get; take your own dumps before large imports.
+- **Login throttling is per phone number**, not per IP: eight failed attempts lock that number for fifteen minutes. It stops password guessing against one account, not a distributed attack.
 
 ## Notes on the implementation
 
@@ -199,6 +212,8 @@ Jalali ↔ Gregorian conversion in [`src/lib/jalali.ts`](src/lib/jalali.ts) is a
 **کاربران:** ورود با شماره موبایل و رمز. رمزها با scrypt و نمک تصادفی هش می‌شوند. اولین باری که برنامه بالا می‌آید و هیچ کاربری نیست، صفحه ورود خودش فرم ساخت کاربر اول را نشان می‌دهد و آن کاربر ادمین می‌شود.
 
 **تاریخچه:** هر ایجاد، ویرایش، حذف، ورود و خروج ثبت می‌شود و در صفحه «تاریخچه» با جست‌وجو و صفحه‌بندی در دسترس است.
+
+**قبل از دیپلوی:** برای Neon حتماً رشته اتصال «pooler» را در `DATABASE_URL` بگذارید، `AUTH_SECRET` را برای هر محیط جداگانه بسازید، و اگر ساعت کاری‌تان تهران نیست `APP_TIMEZONE` را تنظیم کنید. جزئیات در بخش [Deployment notes](#deployment-notes).
 
 راه‌اندازی و متغیرهای محیطی در بخش [Quick start](#quick-start) توضیح داده شده‌اند.
 

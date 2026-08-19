@@ -1,6 +1,7 @@
 import { sql } from "./db";
 import { num } from "./format";
 import { like, paged, type PageParams, type Paged } from "./paging";
+import { todayISO } from "./today";
 
 export type PaymentStatus = "تسویه‌شده" | "بخشی پرداخت‌شده" | "سررسید گذشته" | "پرداخت‌نشده";
 export type ItemStatus = "کاملاً دریافت‌شده" | "کامل ارسال‌شده" | "بخشی ارسال‌شده" | "ارسال‌نشده";
@@ -14,7 +15,7 @@ function d(v: unknown): string | null {
 }
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  return todayISO();
 }
 
 export function paymentStatus(balance: number, paid: number, dueDate: string | null): PaymentStatus {
@@ -44,7 +45,8 @@ export function shipmentStatus(r: {
 
 /* ---------- فاکتورها ---------- */
 
-const invoiceSelect = sql`
+// تابع است نه ثابت، تا اتصال دیتابیس هنگام import ساخته نشود
+const invoiceSelect = () => sql`
   select i.*,
     coalesce(it.items_total, 0)  as items_total,
     coalesce(it.items_count, 0)  as items_count,
@@ -100,12 +102,12 @@ function shapeInvoice(r: Record<string, unknown>) {
 export type Invoice = ReturnType<typeof shapeInvoice>;
 
 export async function listInvoices(): Promise<Invoice[]> {
-  const rows = await sql`${invoiceSelect} order by i.invoice_no`;
+  const rows = await sql`${invoiceSelect()} order by i.invoice_no`;
   return rows.map(shapeInvoice);
 }
 
 export async function getInvoice(id: number): Promise<Invoice | null> {
-  const rows = await sql`${invoiceSelect} where i.id = ${id}`;
+  const rows = await sql`${invoiceSelect()} where i.id = ${id}`;
   return rows.length ? shapeInvoice(rows[0]) : null;
 }
 
@@ -212,7 +214,7 @@ function shapeShipment(r: Record<string, unknown>) {
 
 export type Shipment = ReturnType<typeof shapeShipment>;
 
-const shipmentSelect = sql`
+const shipmentSelect = () => sql`
   select s.*,
     coalesce(a.total_qty, 0)    as total_qty,
     coalesce(a.received_qty, 0) as received_qty,
@@ -230,12 +232,12 @@ const shipmentSelect = sql`
 `;
 
 export async function listShipments(): Promise<Shipment[]> {
-  const rows = await sql`${shipmentSelect} order by s.shipment_no`;
+  const rows = await sql`${shipmentSelect()} order by s.shipment_no`;
   return rows.map(shapeShipment);
 }
 
 export async function getShipment(id: number): Promise<Shipment | null> {
-  const rows = await sql`${shipmentSelect} where s.id = ${id}`;
+  const rows = await sql`${shipmentSelect()} where s.id = ${id}`;
   return rows.length ? shapeShipment(rows[0]) : null;
 }
 
@@ -507,13 +509,13 @@ export async function listInvoicesPaged(p: PageParams): Promise<Paged<Invoice>> 
 
   const rows = await sql`
     select t.* from (
-      ${invoiceSelect}
+      ${invoiceSelect()}
     ) t
     ${where}
     ${order}
     limit ${p.limit} offset ${(p.page - 1) * p.limit}
   `;
-  const [{ n }] = await sql`select count(*)::int as n from (${invoiceSelect}) t ${where}`;
+  const [{ n }] = await sql`select count(*)::int as n from (${invoiceSelect()}) t ${where}`;
   return paged(rows.map(shapeInvoice), Number(n), p);
 }
 
@@ -531,10 +533,10 @@ export async function listShipmentsPaged(p: PageParams): Promise<Paged<Shipment>
   const order = sql`order by ${sql(p.sort)} ${p.dir === "asc" ? sql`asc` : sql`desc`} nulls last, t.id desc`;
 
   const rows = await sql`
-    select t.* from (${shipmentSelect}) t ${where} ${order}
+    select t.* from (${shipmentSelect()}) t ${where} ${order}
     limit ${p.limit} offset ${(p.page - 1) * p.limit}
   `;
-  const [{ n }] = await sql`select count(*)::int as n from (${shipmentSelect}) t ${where}`;
+  const [{ n }] = await sql`select count(*)::int as n from (${shipmentSelect()}) t ${where}`;
   return paged(rows.map(shapeShipment), Number(n), p);
 }
 

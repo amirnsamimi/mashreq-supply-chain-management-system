@@ -2,6 +2,7 @@ import { sql } from "./db";
 import { render, type NotifTarget, type Notification, type Rule, type Severity } from "./notification-types";
 import { listInvoices, listShipments } from "./queries";
 import { money, qty as fq, jalali } from "./format";
+import { daysSince, todayISO } from "./today";
 
 export * from "./notification-types";
 
@@ -51,10 +52,7 @@ export async function unreadCount(): Promise<number> {
 
 /* ---------- موتور ---------- */
 
-const DAY = 86_400_000;
-const today = () => new Date(new Date().toISOString().slice(0, 10) + "T00:00:00Z").getTime();
-const daysBetween = (iso: string | null) =>
-  iso === null ? null : Math.round((today() - new Date(iso + "T00:00:00Z").getTime()) / DAY);
+const daysBetween = (iso: string | null) => daysSince(iso);
 
 /**
  * همه قالب‌های فعال را روی داده فعلی اجرا می‌کند و اعلان‌های تازه می‌سازد.
@@ -76,7 +74,7 @@ export async function runRules(): Promise<{ created: number; checked: number }> 
     vars: Record<string, string>;
   };
   const pending: Pending[] = [];
-  const stamp = new Date().toISOString().slice(0, 10);
+  const stamp = todayISO();
 
   for (const rule of rules) {
     if (rule.target === "invoice") {

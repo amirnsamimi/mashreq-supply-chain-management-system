@@ -40,8 +40,13 @@ export function verifyPassword(password: string, stored: string): boolean {
 /* ---------- نشست: کوکی امضاشده با HMAC ---------- */
 
 function secret(): string {
-  const s = process.env.AUTH_SECRET ?? process.env.APP_PASSWORD;
-  if (!s) throw new Error("AUTH_SECRET تعریف نشده است");
+  const s = process.env.AUTH_SECRET;
+  if (!s) {
+    throw new Error(
+      "AUTH_SECRET تعریف نشده است. با این دستور یکی بسازید: " +
+        'node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"'
+    );
+  }
   return s;
 }
 
@@ -133,4 +138,48 @@ export function normalizePhone(input: string): string {
     "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9",
   };
   return input.replace(/[۰-۹٠-٩]/g, (d) => faMap[d] ?? d).replace(/\D/g, "");
+}
+
+
+/* ---------- محدودسازی تلاش ورود ---------- */
+
+const MAX_ATTEMPTS = 8;
+const LOCK_MINUTES = 15;
+
+/** اگر حساب قفل است، تعداد دقیقه باقی‌مانده را برمی‌گرداند */
+export async function loginLockRemaining(phone: string): Promise<number> {
+  const [row] = await sql`select value from app_state where key = ${"login_fail:" + phone}`;
+  if (!row?.value) return 0;
+  try {
+    const state = JSON.parse(String(row.value)) as { count: number; until: number };
+    if (state.count < MAX_ATTEMPTS) return 0;
+    const left = state.until - Date.now();
+    return left > 0 ? Math.ceil(left / 60_000) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export async function noteLoginFailure(phone: string) {
+  const key = "login_fail:" + phone;
+  const [row] = await sql`select value from app_state where key = ${key}`;
+  let count = 1;
+  try {
+    if (row?.value) {
+      const state = JSON.parse(String(row.value)) as { count: number; until: number };
+      // بعد از پایان قفل، شمارش از نو شروع می‌شود
+      count = state.until > Date.now() || state.count < MAX_ATTEMPTS ? state.count + 1 : 1;
+    }
+  } catch {
+    count = 1;
+  }
+  const value = JSON.stringify({ count, until: Date.now() + LOCK_MINUTES * 60_000 });
+  await sql`
+    insert into app_state (key, value, updated_at) values (${key}, ${value}, now())
+    on conflict (key) do update set value = excluded.value, updated_at = now()
+  `;
+}
+
+export async function clearLoginFailures(phone: string) {
+  await sql`delete from app_state where key = ${"login_fail:" + phone}`;
 }

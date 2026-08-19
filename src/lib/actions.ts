@@ -5,9 +5,12 @@ import { redirect } from "next/navigation";
 import { sql } from "./db";
 import { logAudit } from "./audit";
 import {
+  clearLoginFailures,
   currentUser,
   hashPassword,
   hasUsers,
+  loginLockRemaining,
+  noteLoginFailure,
   normalizePhone,
   requireAuth,
   signOut,
@@ -58,13 +61,20 @@ export async function loginAction(_prev: FormResult, fd: FormData): Promise<Form
   const password = String(fd.get("password") ?? "");
   if (!phone || !password) return err("شماره موبایل و رمز عبور را وارد کنید");
 
+  const locked = await loginLockRemaining(phone);
+  if (locked > 0) {
+    return err(`به‌خاطر تلاش‌های ناموفق، ورود این شماره تا ${locked} دقیقه دیگر بسته است`);
+  }
+
   const rows = await sql`select id, password_hash, is_active from users where phone = ${phone}`;
   const user = rows[0];
   // پیام یکسان تا مشخص نشود کدام شماره در سیستم هست
   if (!user || !verifyPassword(password, String(user.password_hash))) {
+    await noteLoginFailure(phone);
     return err("شماره موبایل یا رمز عبور نادرست است");
   }
   if (!user.is_active) return err("حساب شما غیرفعال شده است");
+  await clearLoginFailures(phone);
 
   await startSession(Number(user.id));
   const [full] = await sql`select id, phone, first_name, last_name, role from users where id = ${user.id}`;

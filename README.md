@@ -1,36 +1,42 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# پیگیری فاکتور و ارسال چندپارتی
 
-## Getting Started
+جایگزین وب فایل اکسل «پیگیری فاکتور و ارسال چندپارتی». چند نفر هم‌زمان می‌توانند کار کنند و همه محاسبات (مانده، سرشکن هزینه حمل، بهای تمام‌شده، وضعیت‌ها) خودکار انجام می‌شود.
 
-First, run the development server:
+## مدل داده (۵ جدول)
+
+| جدول | نقش | کلید خارجی |
+|---|---|---|
+| `invoices` | سربرگ فاکتور | — |
+| `invoice_items` | اقلام هر فاکتور | `invoice_id` |
+| `shipments` | پارت‌های ارسال | — |
+| `allocations` | چه تعداد از کدام قلم در کدام پارت رفته | `item_id` + `shipment_id` |
+| `payments` | پرداخت‌های هر فاکتور | `invoice_id` |
+
+هیچ ستون محاسباتی ذخیره نمی‌شود؛ همه در لحظه از روی همین ۵ جدول حساب می‌شوند (`src/lib/queries.ts`).
+
+## اجرا روی کامپیوتر خودتان
 
 ```bash
+docker run -d --name khanum-pg -e POSTGRES_PASSWORD=khanum -e POSTGRES_DB=khanum -p 55432:5432 postgres:16-alpine
+cp .env.example .env.local   # سپس مقادیر را ویرایش کنید
+npm install
+npm run db:init
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## انتشار روی اینترنت (Vercel + Neon)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+۱. این پوشه را روی GitHub بگذارید.
+۲. در [neon.tech](https://neon.tech) یک پروژه Postgres رایگان بسازید و connection string آن را بردارید.
+۳. در [vercel.com](https://vercel.com) با «Import Project» همین مخزن را وارد کنید و در Environment Variables دو مقدار بدهید:
+   - `DATABASE_URL` = رشته اتصال Neon
+   - `APP_PASSWORD` = رمز عبور مشترک شما و همکارانتان
+۴. بعد از اولین دیپلوی، یک‌بار جداول را بسازید:
+   ```bash
+   DATABASE_URL="رشته-اتصال-Neon" node scripts/init-db.mjs
+   ```
+۵. آدرس Vercel را به همکارانتان بدهید؛ با همان رمز وارد می‌شوند.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## نکته امنیتی
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+احراز هویت با یک رمز مشترک است (کوکی امضاشده، ۳۰ روز). اگر بعداً نیاز به کاربر جداگانه و سطح دسترسی داشتید، باید جدول `users` اضافه شود.

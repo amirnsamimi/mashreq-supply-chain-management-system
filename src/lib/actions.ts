@@ -503,13 +503,6 @@ export async function createPayment(_prev: FormResult, fd: FormData): Promise<Fo
   `;
   if (!inv) return err("فاکتور پیدا نشد");
 
-  const remaining = Number(inv.total_amount) - Number(inv.paid);
-  if (amount > remaining + 0.005) {
-    return err(
-      `مبلغ از مانده فاکتور بیشتر است. مانده: ${money(remaining)} — اگر عمدی است، اول مبلغ کل فاکتور را اصلاح کنید.`
-    );
-  }
-
   const [row] = await sql`
     insert into payments (invoice_id, payment_date, amount, method, reference, notes)
     values (${invoiceId}, ${s(fd, "payment_date")}, ${amount},

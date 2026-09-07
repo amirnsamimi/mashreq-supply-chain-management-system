@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { jalali, money } from "@/lib/format";
+import { jalali, money, balanceLabel } from "@/lib/format";
 import { deletePayment } from "@/lib/actions";
 import { Button, Card, Empty } from "@/components/geist";
 import { DateText } from "@/components/DateText";
@@ -40,7 +40,7 @@ export function InvoicePaymentsCard({
           </Button>
         </Link>
       }
-      footer={`مانده فاکتور ${invoiceNo}: ${money(balance)} ${currency}`}
+      footer={`مانده فاکتور ${invoiceNo}: ${balanceLabel(balance)} ${currency}`}
     >
       {payments.length === 0 ? (
         <Empty title="پرداختی ثبت نشده است">

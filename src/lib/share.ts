@@ -102,7 +102,7 @@ export async function invoiceByToken(token: string): Promise<PublicInvoice | nul
   `;
   if (!inv) return null;
 
-  const balance = Math.max(0, num(inv.total_amount) - num(inv.paid));
+  const balance = num(inv.total_amount) - num(inv.paid);
 
   const itemRows = await sql`
     select ii.id, ii.sku, ii.description, ii.qty,
@@ -211,7 +211,7 @@ export async function invoiceMoney(invoiceId: number): Promise<InvoiceMoney> {
     total_amount: total,
     items_total: num(inv?.items_total),
     paid,
-    balance: Math.max(0, total - paid),
+    balance: total - paid,
     items: Object.fromEntries(
       itemRows.map((r) => [
         Number(r.id),

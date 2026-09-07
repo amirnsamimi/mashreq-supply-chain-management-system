@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import type { Invoice, PaymentRow } from "@/lib/queries";
 import type { Paged } from "@/lib/paging";
-import { money } from "@/lib/format";
+import { money, balanceLabel } from "@/lib/format";
 import { createPayment, deletePayment } from "@/lib/actions";
 import { PAY_METHODS } from "@/lib/lists";
 import { ActionForm, Submit } from "@/components/ActionForm";
@@ -163,7 +163,7 @@ export function NewPaymentModal({
             options={sorted.map((i) => ({
               value: String(i.id),
               label: `${i.invoice_no}${i.supplier ? ` — ${i.supplier}` : ""}`,
-              hint: `مانده ${money(i.balance)} ${i.currency ?? ""}`,
+              hint: `مانده ${balanceLabel(i.balance)} ${i.currency ?? ""}`,
             }))}
             value={invoiceId}
             onChange={setInvoiceId}
@@ -176,7 +176,7 @@ export function NewPaymentModal({
               فاکتور {selected.invoice_no} — مبلغ کل {money(selected.total_amount)}{" "}
               {selected.currency}، پرداخت‌شده {money(selected.paid)}، مانده{" "}
               <b>
-                {money(selected.balance)} {selected.currency}
+                {balanceLabel(selected.balance)} {selected.currency}
               </b>{" "}
               <Badge tone={statusTone(selected.payment_status)}>{selected.payment_status}</Badge>
             </Note>
@@ -188,7 +188,7 @@ export function NewPaymentModal({
           key={invoiceId}
           name="amount"
           label={`مبلغ${selected?.currency ? ` (${selected.currency})` : ""}`}
-          defaultValue={selected?.balance ?? 0}
+          defaultValue={Math.max(0, selected?.balance ?? 0)}
         />
         <SelectField name="method" label="روش پرداخت" defaultValue={PAY_METHODS[0]} options={PAY_METHODS} />
         <Input name="reference" label="مرجع/رسید" />

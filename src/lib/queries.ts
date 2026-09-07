@@ -77,7 +77,7 @@ function shapeInvoice(r: Record<string, unknown>) {
   const total = num(r.total_amount);
   const itemsTotal = num(r.items_total);
   const paid = num(r.paid);
-  const balance = Math.max(0, total - paid);
+  const balance = total - paid;
   return {
     id: r.id as number,
     invoice_no: r.invoice_no as string,
@@ -608,9 +608,9 @@ export async function listSuppliersPaged(p: PageParams): Promise<Paged<Supplier>
     left join lateral (
       select count(*) as invoice_count,
              sum(i.total_amount) as total_amount,
-             sum(greatest(i.total_amount - coalesce((
+             sum(i.total_amount - coalesce((
                select sum(amount) from payments where invoice_id = i.id
-             ), 0), 0)) as balance
+             ), 0)) as balance
       from invoices i where i.supplier_id = s.id
     ) a on true
   `;

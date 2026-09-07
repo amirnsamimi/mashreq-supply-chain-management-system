@@ -13,7 +13,7 @@ import {
 import { listAudit } from "@/lib/audit";
 import { activeShare } from "@/lib/share";
 import { baseUrl } from "@/lib/base-url";
-import { money, jalali } from "@/lib/format";
+import { money, jalali, balanceLabel } from "@/lib/format";
 import { Page } from "@/components/Nav";
 import { Badge, Card, Stat } from "@/components/geist";
 import { statusTone } from "@/lib/tones";
@@ -87,7 +87,7 @@ export default async function InvoicePage({
         />
         <Stat
           label={`مانده (${cur})`}
-          value={money(inv.balance)}
+          value={balanceLabel(inv.balance)}
           tone={inv.balance > 0 ? "warn" : "good"}
         />
       </div>

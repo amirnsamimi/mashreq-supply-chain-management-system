@@ -18,6 +18,13 @@ export function qty(v: unknown): string {
   return nf.format(num(v));
 }
 
+/** مانده فاکتور را با برچسب بدهی/بستانکاری نمایش می‌دهد (مانده منفی یعنی پیش‌پرداخت) */
+export function balanceLabel(balance: unknown): string {
+  const b = num(balance);
+  if (b < -0.005) return `${money(Math.abs(b))} بستانکار`;
+  return money(b);
+}
+
 /** تاریخ شمسی با رقم لاتین: 1404/05/28 → 1404/05/28 */
 const jalaliFmt = new Intl.DateTimeFormat("fa-IR-u-ca-persian-nu-latn", {
   year: "numeric",

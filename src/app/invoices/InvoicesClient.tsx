@@ -83,6 +83,18 @@ export function InvoicesClient({
       render: (r) => <span className="num font-medium">{money(r.balance)}</span>,
       total: (rows) => <span className="num">{money(rows.reduce((s, r) => s + r.balance, 0))}</span>,
     },
+    {
+      key: "wallet_added",
+      header: "افزوده به کیف‌پول",
+      value: (r) => r.wallet_added,
+      render: (r) =>
+        r.wallet_added > 0.005 ? (
+          <span className="num font-medium text-[var(--geist-green-text)]">{money(r.wallet_added)}</span>
+        ) : (
+          <span className="num text-[var(--geist-tertiary)]">—</span>
+        ),
+      total: (rows) => <span className="num">{money(rows.reduce((s, r) => s + r.wallet_added, 0))}</span>,
+    },
     { key: "due_date", header: "سررسید", value: (r) => r.due_date, render: (r) => <DateText value={r.due_date} /> },
     {
       key: "payment_status",

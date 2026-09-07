@@ -1,9 +1,10 @@
+import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { PAYMENT_SORTS, listInvoices, listPaymentsPaged } from "@/lib/queries";
 import { parseParams } from "@/lib/paging";
 import { money } from "@/lib/format";
 import { Page } from "@/components/Nav";
-import { Stat } from "@/components/geist";
+import { Button, Stat } from "@/components/geist";
 import { NewPaymentTrigger, PaymentsClient } from "./PaymentsClient";
 
 export const dynamic = "force-dynamic";
@@ -35,7 +36,14 @@ export default async function PaymentsPage({
       title="پرداخت‌ها"
       user={`${me.first_name} ${me.last_name}`}
       permissions={me.permissions}
-      action={<NewPaymentTrigger />}
+      action={
+        <div className="flex gap-2">
+          <Link href="/payments/charge">
+            <Button>شارژ کیف‌پول</Button>
+          </Link>
+          <NewPaymentTrigger />
+        </div>
+      }
     >
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="تعداد پرداخت‌ها" value={payments.total} />

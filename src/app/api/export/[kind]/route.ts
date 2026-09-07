@@ -52,8 +52,8 @@ export async function GET(
   if (kind === "invoices") {
     const rows = await listInvoices();
     content = csv(
-      ["شماره فاکتور","فروشنده","تاریخ فاکتور","ارز","مبلغ کل","جمع اقلام","اختلاف","جمع پرداختی","مانده","تاریخ سررسید","آخرین پرداخت","وضعیت پرداخت","وضعیت فاکتور","توضیحات"],
-      rows.map((r) => [r.invoice_no, r.supplier, jd(r.invoice_date), r.currency, r.total_amount, r.items_total, r.diff, r.paid, r.balance, jd(r.due_date), jd(r.last_payment_date), r.payment_status, r.invoice_status, r.notes])
+      ["شماره فاکتور","فروشنده","تاریخ فاکتور","ارز","مبلغ کل","جمع اقلام","اختلاف","جمع پرداختی","مانده","افزوده به کیف‌پول","تاریخ سررسید","آخرین پرداخت","وضعیت پرداخت","وضعیت فاکتور","توضیحات"],
+      rows.map((r) => [r.invoice_no, r.supplier, jd(r.invoice_date), r.currency, r.total_amount, r.items_total, r.diff, r.paid, r.balance, r.wallet_added, jd(r.due_date), jd(r.last_payment_date), r.payment_status, r.invoice_status, r.notes])
     );
     filename = "فاکتورها";
   } else if (kind === "suppliers") {

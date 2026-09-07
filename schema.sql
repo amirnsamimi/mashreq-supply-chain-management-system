@@ -164,9 +164,13 @@ create table if not exists supplier_credits (
 );
 create index if not exists idx_supplier_credits_supplier on supplier_credits(supplier_id, currency);
 
+-- کدام فاکتور باعث این واریز اعتبار شد (فقط برای ردیف‌های واریز/اضافه‌پرداخت؛ مصرف اعتبار به یک فاکتور خاص نسبت داده نمی‌شود)
+alter table supplier_credits add column if not exists invoice_id integer references invoices(id) on delete set null;
+create index if not exists idx_supplier_credits_invoice on supplier_credits(invoice_id);
+
 -- اضافه‌پرداخت‌های قدیمی هر فاکتور (paid > total_amount) را به کیف‌پول همان تأمین‌کننده/ارز منتقل می‌کند
-insert into supplier_credits (supplier_id, currency, amount, notes)
-select i.supplier_id, coalesce(i.currency, 'RMB'), (coalesce(pa.paid, 0) - i.total_amount),
+insert into supplier_credits (supplier_id, currency, amount, invoice_id, notes)
+select i.supplier_id, coalesce(i.currency, 'RMB'), (coalesce(pa.paid, 0) - i.total_amount), i.id,
   'انتقال خودکار اضافه‌پرداخت فاکتور ' || i.invoice_no
 from invoices i
 join lateral (
@@ -179,6 +183,12 @@ where i.supplier_id is not null
     where sc.supplier_id = i.supplier_id
       and sc.notes = 'انتقال خودکار اضافه‌پرداخت فاکتور ' || i.invoice_no
   );
+
+-- ردیف‌های واریزیِ قدیمی این جدول را که پیش از افزودن ستون invoice_id ساخته شده بودند، با شماره فاکتور داخل notes تطبیق می‌دهد
+update supplier_credits sc set invoice_id = i.id
+from invoices i
+where sc.invoice_id is null
+  and sc.notes = 'انتقال خودکار اضافه‌پرداخت فاکتور ' || i.invoice_no;
 
 -- قالب‌های اعلان که کاربر خودش می‌سازد
 create table if not exists notification_rules (

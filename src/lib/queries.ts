@@ -48,10 +48,11 @@ export function shipmentStatus(r: {
 // تابع است نه ثابت، تا اتصال دیتابیس هنگام import ساخته نشود
 const invoiceSelect = () => sql`
   select i.*,
-    coalesce(it.items_total, 0)  as items_total,
-    coalesce(it.items_count, 0)  as items_count,
-    coalesce(p.paid, 0)          as paid,
-    p.last_payment_date
+    coalesce(it.items_total, 0)   as items_total,
+    coalesce(it.items_count, 0)   as items_count,
+    coalesce(p.paid, 0)           as paid,
+    p.last_payment_date,
+    coalesce(wc.wallet_added, 0)  as wallet_added
   from invoices i
   left join lateral (
     select sum(qty * unit_price) as items_total, count(*) as items_count
@@ -62,6 +63,10 @@ const invoiceSelect = () => sql`
     from payment_allocations pa join payments pay on pay.id = pa.payment_id
     where pa.invoice_id = i.id
   ) p on true
+  left join lateral (
+    -- این فاکتور چقدر اضافه‌پرداخت شده که به‌جای منفی ماندن، به کیف‌پول تأمین‌کننده واریز شده
+    select sum(amount) as wallet_added from supplier_credits where invoice_id = i.id and amount > 0
+  ) wc on true
 `;
 
 export type InvoiceRow = {
@@ -95,6 +100,7 @@ function shapeInvoice(r: Record<string, unknown>) {
     balance,
     items_count: num(r.items_count),
     last_payment_date: d(r.last_payment_date),
+    wallet_added: num(r.wallet_added),
     payment_status: paymentStatus(balance, paid, d(r.due_date)),
     invoice_status: balance <= 0.005 ? "بسته" : "باز",
   };
@@ -537,7 +543,7 @@ export async function listSuppliers(): Promise<Supplier[]> {
  */
 export const INVOICE_SORTS = [
   "invoice_no", "supplier", "invoice_date", "currency",
-  "total_amount", "items_total", "paid", "balance", "due_date",
+  "total_amount", "items_total", "paid", "balance", "wallet_added", "due_date",
 ] as const;
 
 export async function listInvoicesPaged(p: PageParams): Promise<Paged<Invoice>> {
@@ -706,4 +712,28 @@ export async function getSupplierWalletBalance(supplierId: number, currency: str
     where supplier_id = ${supplierId} and currency = ${currency}
   `;
   return num(row.balance);
+}
+
+/** تاریخچه شارژهای مستقیم کیف‌پول یک تأمین‌کننده (بدون فاکتور) */
+export async function listWalletCharges(supplierId: number) {
+  const rows = await sql`
+    select sc.id, sc.currency, sc.amount, sc.created_at,
+      pay.payment_date, pay.method, pay.reference, pay.notes
+    from supplier_credits sc
+    join payments pay on pay.id = sc.payment_id
+    where sc.supplier_id = ${supplierId}
+      and sc.invoice_id is null
+      and sc.notes = 'شارژ مستقیم کیف‌پول'
+    order by sc.created_at desc
+    limit 20
+  `;
+  return rows.map((r) => ({
+    id: Number(r.id),
+    currency: String(r.currency),
+    amount: num(r.amount),
+    payment_date: d(r.payment_date),
+    method: (r.method as string | null) ?? null,
+    reference: (r.reference as string | null) ?? null,
+    notes: (r.notes as string | null) ?? null,
+  }));
 }

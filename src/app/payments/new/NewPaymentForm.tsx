@@ -48,6 +48,8 @@ export function NewPaymentForm({
   const [page, setPage] = useState(0);
   /** مبلغی که از کیف‌پول برای هر فاکتور انتخاب شده؛ فقط فاکتورهایی که کاربر عمداً از اعتبار پر کرده اینجا هستند */
   const [creditAmounts, setCreditAmounts] = useState<Record<number, number>>({});
+  const [method, setMethod] = useState(PAY_METHODS[0]);
+  const [methodTouched, setMethodTouched] = useState(false);
 
   const noSupplierCount = useMemo(() => invoices.filter((i) => i.supplier_id == null).length, [invoices]);
 
@@ -89,6 +91,7 @@ export function NewPaymentForm({
     setSearch("");
     setPage(0);
     setCreditAmounts({});
+    setMethodTouched(false);
   }, [supplierId]);
 
   function selectSupplier(v: string) {
@@ -141,6 +144,12 @@ export function NewPaymentForm({
       : 0;
   const walletRemaining = Math.max(0, walletBalance - creditUsedTotal);
 
+  // تا وقتی کاربر خودش روش پرداخت را عوض نکرده، اگر اعتباری استفاده شود روش را به «اعتبار کیف‌پول» تغییر بده
+  useEffect(() => {
+    if (methodTouched) return;
+    setMethod(creditUsedTotal > 0.005 ? "اعتبار کیف‌پول" : PAY_METHODS[0]);
+  }, [creditUsedTotal, methodTouched]);
+
   // فاکتورهای انتخاب‌نشده برای مرور و افزودن؛ همین‌جا صفحه‌بندی می‌شوند تا فهرست بلند شلوغ نشود
   const browsable = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -158,6 +167,7 @@ export function NewPaymentForm({
     setCreditAmounts({});
     setSearch("");
     setPage(0);
+    setMethodTouched(false);
   }
 
   return (
@@ -181,13 +191,86 @@ export function NewPaymentForm({
               <SuccessReset state={state} onSuccess={resetSelection} />
               <input type="hidden" name="supplier_id" value={supplierId === NO_SUPPLIER ? "" : supplierId} />
 
+          <Card title={`فاکتورهای این تأمین‌کننده (${browsable.length})`}>
+            <div className="border-b border-[var(--geist-border)] p-3">
+              <Input
+                size="small"
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(0);
+                }}
+                placeholder="جست‌وجو در شماره فاکتور…"
+              />
+            </div>
+            {pageRows.length === 0 ? (
+              <div className="p-4 text-sm text-[var(--geist-secondary)]">
+                {browsable.length === 0 && supplierInvoices.length > 0
+                  ? "همه فاکتورهای این تأمین‌کننده انتخاب شده‌اند"
+                  : "فاکتوری پیدا نشد"}
+              </div>
+            ) : (
+              <>
+                <div className="scroll-x">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>فاکتور</th>
+                        <th>سررسید</th>
+                        <th>مانده</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pageRows.map((i) => (
+                        <tr key={i.id}>
+                          <td>
+                            {i.invoice_no} <Badge tone={statusTone(i.payment_status)}>{i.payment_status}</Badge>
+                          </td>
+                          <td>{i.due_date ? <DateText value={i.due_date} /> : "—"}</td>
+                          <td className="num">
+                            {balanceLabel(i.balance)} {i.currency}
+                          </td>
+                          <td>
+                            <Button size="tiny" onClick={() => check(i.id)}>
+                              افزودن
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {pageCount > 1 && (
+                  <div className="flex items-center justify-between gap-2 border-t border-[var(--geist-border)] p-3 text-sm text-[var(--geist-secondary)]">
+                    <span>
+                      صفحه {currentPage + 1} از {pageCount}
+                    </span>
+                    <div className="flex gap-2">
+                      <Button size="tiny" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={currentPage === 0}>
+                        قبلی
+                      </Button>
+                      <Button
+                        size="tiny"
+                        onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+                        disabled={currentPage >= pageCount - 1}
+                      >
+                        بعدی
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </Card>
+
           <Card title={`فاکتورهای انتخاب‌شده برای این پرداخت (${checkedInvoices.length})`}>
             {walletBalance > 0.005 && (
               <div className="p-4 pb-0">
                 <Note type="success">
-                  این تأمین‌کننده {money(walletBalance)} {activeCurrency} اعتبار در کیف‌پول دارد. برای هر فاکتور
-                  می‌توانید بخشی از مبلغش را از همین اعتبار بپردازید و بقیه را نقد. اعتبار باقی‌مانده برای استفاده:{" "}
-                  <b>{money(walletRemaining)}</b> {activeCurrency}
+                  {money(walletBalance)} {activeCurrency} اعتبار در کیف‌پول این تأمین‌کننده داریم. برای هر فاکتور
+                  می‌توانید بخشی از مبلغ را از اعتبارتان نزد این تأمین‌کننده و بقیه را از روش‌های دیگر بپردازید. اعتبار
+                  باقی‌مانده برای استفاده: <b>{money(walletRemaining)}</b> {activeCurrency}
                 </Note>
               </div>
             )}
@@ -275,83 +358,19 @@ export function NewPaymentForm({
             )}
           </Card>
 
-          <Card title={`فاکتورهای این تأمین‌کننده (${browsable.length})`}>
-            <div className="border-b border-[var(--geist-border)] p-3">
-              <Input
-                size="small"
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setPage(0);
-                }}
-                placeholder="جست‌وجو در شماره فاکتور…"
-              />
-            </div>
-            {pageRows.length === 0 ? (
-              <div className="p-4 text-sm text-[var(--geist-secondary)]">
-                {browsable.length === 0 && supplierInvoices.length > 0
-                  ? "همه فاکتورهای این تأمین‌کننده انتخاب شده‌اند"
-                  : "فاکتوری پیدا نشد"}
-              </div>
-            ) : (
-              <>
-                <div className="scroll-x">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>فاکتور</th>
-                        <th>سررسید</th>
-                        <th>مانده</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {pageRows.map((i) => (
-                        <tr key={i.id}>
-                          <td>
-                            {i.invoice_no} <Badge tone={statusTone(i.payment_status)}>{i.payment_status}</Badge>
-                          </td>
-                          <td>{i.due_date ? <DateText value={i.due_date} /> : "—"}</td>
-                          <td className="num">
-                            {balanceLabel(i.balance)} {i.currency}
-                          </td>
-                          <td>
-                            <Button size="tiny" onClick={() => check(i.id)}>
-                              افزودن
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                {pageCount > 1 && (
-                  <div className="flex items-center justify-between gap-2 border-t border-[var(--geist-border)] p-3 text-sm text-[var(--geist-secondary)]">
-                    <span>
-                      صفحه {currentPage + 1} از {pageCount}
-                    </span>
-                    <div className="flex gap-2">
-                      <Button size="tiny" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={currentPage === 0}>
-                        قبلی
-                      </Button>
-                      <Button
-                        size="tiny"
-                        onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
-                        disabled={currentPage >= pageCount - 1}
-                      >
-                        بعدی
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-          </Card>
-
           {/* دیوی معمولی به‌جای Card: Card به‌خاطر overflow-hidden، تقویم بازشوی DateInput را می‌بُرد */}
           <div className="grid gap-4 rounded-[var(--geist-radius-lg)] border border-[var(--geist-border)] bg-[var(--geist-background)] p-4 sm:grid-cols-2">
             <DateInput name="payment_date" label="تاریخ پرداخت" />
-            <SelectField name="method" label="روش پرداخت" defaultValue={PAY_METHODS[0]} options={PAY_METHODS} />
+            <SelectField
+              name="method"
+              label="روش پرداخت"
+              value={method}
+              onChange={(v) => {
+                setMethod(v);
+                setMethodTouched(true);
+              }}
+              options={PAY_METHODS}
+            />
             <Input name="reference" label="مرجع/رسید" />
             <div className="sm:col-span-2">
               <Input name="notes" label="توضیحات" />

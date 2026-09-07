@@ -553,8 +553,9 @@ export async function createPayment(_prev: FormResult, fd: FormData): Promise<Fo
 
   // برای هر فاکتور، ابتدا اعتبار و سپس نقد را روی مانده اعمال می‌کنیم؛ مازاد نقد به کیف‌پول واریز می‌شود
   const invoiceApplied = new Map<number, number>();
+  /** مازاد نقد هر فاکتور جدا نگه داشته می‌شود تا در کیف‌پول به همان فاکتور نسبت داده شود */
+  const invoiceDeposit = new Map<number, number>();
   let creditConsumed = 0;
-  let walletDeposit = 0;
   let netCash = 0;
   for (const [invoiceId, inv] of invoiceById) {
     let remaining = inv.balance;
@@ -567,7 +568,8 @@ export async function createPayment(_prev: FormResult, fd: FormData): Promise<Fo
 
     const cashAmount = rows.filter((a) => a.source === "cash").reduce((s2, a) => s2 + a.amount, 0);
     const cashApplied = Math.min(cashAmount, remaining);
-    walletDeposit += cashAmount - cashApplied; // مازاد نقد نسبت به مانده فاکتور
+    const overflow = cashAmount - cashApplied; // مازاد نقد نسبت به مانده همین فاکتور
+    if (overflow > 0.005) invoiceDeposit.set(invoiceId, overflow);
     netCash += cashAmount;
 
     const applied = creditApplied + cashApplied;
@@ -584,11 +586,14 @@ export async function createPayment(_prev: FormResult, fd: FormData): Promise<Fo
     for (const [invoiceId, applied] of invoiceApplied) {
       await tx`insert into payment_allocations (payment_id, invoice_id, amount) values (${row.id}, ${invoiceId}, ${applied})`;
     }
-    if (supplierId && currency && walletDeposit > 0.005) {
-      await tx`
-        insert into supplier_credits (supplier_id, currency, amount, payment_id, notes)
-        values (${supplierId}, ${currency}, ${walletDeposit}, ${row.id}, ${"اضافه‌پرداخت این تراکنش"})
-      `;
+    if (supplierId && currency) {
+      for (const [invoiceId, overflow] of invoiceDeposit) {
+        const invoiceNo = invoiceById.get(invoiceId)?.invoice_no ?? "";
+        await tx`
+          insert into supplier_credits (supplier_id, currency, amount, payment_id, invoice_id, notes)
+          values (${supplierId}, ${currency}, ${overflow}, ${row.id}, ${invoiceId}, ${"اضافه‌پرداخت فاکتور " + invoiceNo})
+        `;
+      }
     }
     if (supplierId && currency && creditConsumed > 0.005) {
       await tx`
@@ -614,6 +619,45 @@ export async function createPayment(_prev: FormResult, fd: FormData): Promise<Fo
   return ok("پرداخت ثبت شد");
 }
 
+/**
+ * شارژ مستقیم کیف‌پول: واریز اعتبار به یک تأمین‌کننده بدون این‌که به فاکتوری وصل باشد
+ * (مثلاً پیش‌پرداخت قبل از صدور فاکتور). یک ردیف payments برای سابقه/گزارش ساخته می‌شود،
+ * ولی هیچ payment_allocations‌ای ندارد.
+ */
+export async function chargeWallet(_prev: FormResult, fd: FormData): Promise<FormResult> {
+  const me = await requireAuth();
+  const supplierId = Number(s(fd, "supplier_id"));
+  if (!supplierId) return err("تأمین‌کننده را انتخاب کنید");
+  const currency = s(fd, "currency");
+  if (!currency) return err("ارز را انتخاب کنید");
+  const amount = n(fd, "amount") ?? 0;
+  if (amount <= 0) return err("مبلغ باید بزرگ‌تر از صفر باشد");
+
+  const [supplier] = await sql`select id, name from suppliers where id = ${supplierId}`;
+  if (!supplier) return err("تأمین‌کننده پیدا نشد");
+
+  const paymentId = await sql.begin(async (tx) => {
+    const [row] = await tx`
+      insert into payments (supplier_id, payment_date, amount, method, reference, notes)
+      values (${supplierId}, ${s(fd, "payment_date")}, ${amount},
+              ${s(fd, "method")}, ${s(fd, "reference")}, ${s(fd, "notes")})
+      returning id
+    `;
+    await tx`
+      insert into supplier_credits (supplier_id, currency, amount, payment_id, notes)
+      values (${supplierId}, ${currency}, ${amount}, ${row.id}, ${"شارژ مستقیم کیف‌پول"})
+    `;
+    return Number(row.id);
+  });
+
+  await logAudit(me, "ایجاد", "payment", paymentId, `${money(amount)} ${currency} شارژ کیف‌پول ${supplier.name}`);
+  revalidatePath("/payments");
+  revalidatePath("/payments/charge");
+  revalidatePath("/suppliers");
+  revalidatePath("/");
+  return ok("کیف‌پول شارژ شد");
+}
+
 export async function deletePayment(fd: FormData) {
   const me = await requireAuth();
   const id = Number(fd.get("id"));
@@ -622,6 +666,7 @@ export async function deletePayment(fd: FormData) {
   if (row) await logAudit(me, "حذف", "payment", id, `پرداخت ${money(row.amount)}`);
   for (const r of affected) revalidatePath(`/invoices/${Number(r.invoice_id)}`);
   revalidatePath("/payments");
+  revalidatePath("/suppliers");
 }
 
 /* ================= پارت ارسال ================= */

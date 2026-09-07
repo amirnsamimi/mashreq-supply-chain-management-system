@@ -83,7 +83,7 @@ export default async function InvoicePage({
           label={`جمع پرداختی (${cur})`}
           value={money(inv.paid)}
           tone="good"
-          hint={inv.last_payment_date ? `آخرین: ${<DateText value={inv.last_payment_date} />}` : undefined}
+          hint={inv.last_payment_date ? <>آخرین: <DateText value={inv.last_payment_date} /></> : undefined}
         />
         <Stat
           label={`مانده (${cur})`}

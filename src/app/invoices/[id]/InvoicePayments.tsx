@@ -23,18 +23,21 @@ export function InvoicePaymentsCard({
   payments,
   balance,
   currency,
+  supplierId,
 }: {
   invoiceNo: string;
   payments: Payment[];
   balance: number;
   currency: string;
+  supplierId: number | null;
 }) {
+  const newPaymentHref = supplierId ? `/payments/new?supplier=${supplierId}` : "/payments/new";
   return (
     <Card
       title={`پرداخت‌ها (${payments.length})`}
       className="lg:col-span-2"
       action={
-        <Link href="/payments">
+        <Link href={newPaymentHref}>
           <Button size="tiny" variant="primary">
             ثبت پرداخت
           </Button>
@@ -44,7 +47,7 @@ export function InvoicePaymentsCard({
     >
       {payments.length === 0 ? (
         <Empty title="پرداختی ثبت نشده است">
-          از صفحه «پرداخت‌ها» می‌توانید برای این فاکتور پرداخت ثبت کنید
+          با دکمه «ثبت پرداخت» می‌توانید برای این فاکتور پرداخت ثبت کنید
         </Empty>
       ) : (
         <div className="scroll-x">

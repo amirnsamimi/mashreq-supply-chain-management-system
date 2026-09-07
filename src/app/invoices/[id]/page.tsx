@@ -117,6 +117,7 @@ export default async function InvoicePage({
           payments={payments}
           balance={inv.balance}
           currency={cur}
+          supplierId={inv.supplier_id}
         />
         <InvoiceEditCard inv={inv} suppliers={suppliers} />
       </div>

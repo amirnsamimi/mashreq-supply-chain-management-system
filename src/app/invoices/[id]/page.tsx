@@ -113,7 +113,6 @@ export default async function InvoicePage({
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
         <InvoicePaymentsCard
-          invoiceId={id}
           invoiceNo={inv.invoice_no}
           payments={payments}
           balance={inv.balance}

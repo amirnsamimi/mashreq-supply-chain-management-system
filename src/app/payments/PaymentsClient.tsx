@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import type { Invoice, PaymentRow } from "@/lib/queries";
+import { useMemo, useState } from "react";
+import type { Invoice, PaymentRow, Supplier } from "@/lib/queries";
 import type { Paged } from "@/lib/paging";
 import { money, balanceLabel } from "@/lib/format";
 import { createPayment, deletePayment } from "@/lib/actions";
@@ -29,9 +29,11 @@ import { useOpenParam } from "@/components/useOpenParam";
 export function PaymentsClient({
   page,
   invoices,
+  suppliers,
 }: {
   page: Paged<PaymentRow>;
   invoices: Invoice[];
+  suppliers: Supplier[];
 }) {
   const payments = page.rows;
   const [open, setOpen] = useState(false);
@@ -89,14 +91,17 @@ export function PaymentsClient({
       sortable: false,
       render: (r) => (
         <form action={deletePayment}>
-          <input type="hidden" name="id" value={r.id} />
-          <input type="hidden" name="invoice_id" value={r.invoice_id} />
+          <input type="hidden" name="id" value={r.payment_id} />
           <Button
             htmlType="submit"
             size="tiny"
             variant="tertiary"
             className="!text-[var(--geist-red-text)]"
-            confirm={`پرداخت ${money(r.amount)} فاکتور ${r.invoice_no} حذف شود؟`}
+            confirm={
+              r.invoice_count > 1
+                ? `این پرداخت بین ${r.invoice_count} فاکتور تقسیم شده؛ حذف آن، تخصیص به همه آن فاکتورها را پاک می‌کند. ادامه؟`
+                : `پرداخت ${money(r.amount)} فاکتور ${r.invoice_no} حذف شود؟`
+            }
           >
             حذف
           </Button>
@@ -125,78 +130,159 @@ export function PaymentsClient({
           </a>
         }
       />
-      <NewPaymentModal open={open} setOpen={setOpen} invoices={invoices} />
+      <NewPaymentModal open={open} setOpen={setOpen} invoices={invoices} suppliers={suppliers} />
     </Card>
   );
 }
+
+/** مقدار انتخابی برای گروه فاکتورهای بدون تأمین‌کننده (داده‌های قدیمی) */
+const NO_SUPPLIER = "__none__";
 
 export function NewPaymentModal({
   open,
   setOpen,
   invoices,
+  suppliers,
 }: {
   open: boolean;
   setOpen: (v: boolean) => void;
   invoices: Invoice[];
+  suppliers: Supplier[];
 }) {
-  const [invoiceId, setInvoiceId] = useState("");
-  const selected = invoices.find((i) => String(i.id) === invoiceId);
-  // فاکتورهای بدهکار اول فهرست باشند
-  const sorted = [...invoices].sort((a, b) => b.balance - a.balance);
+  const [supplierId, setSupplierId] = useState("");
+  const [checked, setChecked] = useState<Set<number>>(new Set());
+
+  const noSupplierCount = useMemo(() => invoices.filter((i) => i.supplier_id == null).length, [invoices]);
+
+  const supplierOptions = useMemo(() => {
+    const opts = suppliers
+      .filter((sup) => sup.invoice_count > 0)
+      .sort((a, b) => b.balance - a.balance)
+      .map((sup) => ({
+        value: String(sup.id),
+        label: sup.name,
+        hint: `${sup.invoice_count} فاکتور — مانده ${balanceLabel(sup.balance)}`,
+      }));
+    if (noSupplierCount > 0) {
+      opts.push({
+        value: NO_SUPPLIER,
+        label: "بدون تأمین‌کننده",
+        hint: `${noSupplierCount} فاکتور بدون تأمین‌کننده ثبت‌شده`,
+      });
+    }
+    return opts;
+  }, [suppliers, noSupplierCount]);
+
+  const supplierInvoices = useMemo(() => {
+    if (!supplierId) return [];
+    const list =
+      supplierId === NO_SUPPLIER
+        ? invoices.filter((i) => i.supplier_id == null)
+        : invoices.filter((i) => i.supplier_id === Number(supplierId));
+    // سررسید نزدیک‌تر اول، چون معمولاً همان‌ها باید زودتر پرداخت شوند
+    return [...list].sort((a, b) => (a.due_date ?? "9999-99-99").localeCompare(b.due_date ?? "9999-99-99"));
+  }, [invoices, supplierId]);
+
+  function selectSupplier(v: string) {
+    setSupplierId(v);
+    setChecked(new Set());
+  }
+
+  function toggle(id: number) {
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  const checkedInvoices = supplierInvoices.filter((i) => checked.has(i.id));
+  const mixedCurrency = new Set(checkedInvoices.map((i) => i.currency)).size > 1;
 
   return (
     <Modal
       open={open}
       onClose={() => setOpen(false)}
       title="ثبت پرداخت"
-      description="اول فاکتور را انتخاب کنید؛ مانده‌اش را همین‌جا می‌بینید."
+      description="اول تأمین‌کننده را انتخاب کنید، بعد فاکتورهایی را که همین حالا پرداخت می‌شوند تیک بزنید — لازم نیست همه با هم پرداخت شوند."
       footer={null}
-      width={620}
+      width={720}
     >
       <ActionForm action={createPayment} className="grid gap-4 sm:grid-cols-2">
-        <input type="hidden" name="invoice_id" value={invoiceId} />
+        <input type="hidden" name="supplier_id" value={supplierId === NO_SUPPLIER ? "" : supplierId} />
         <div className="sm:col-span-2">
           <Combobox
-            label="فاکتور"
-            placeholder="جست‌وجو در شماره فاکتور یا فروشنده…"
-            emptyText="فاکتوری پیدا نشد"
-            options={sorted.map((i) => ({
-              value: String(i.id),
-              label: `${i.invoice_no}${i.supplier ? ` — ${i.supplier}` : ""}`,
-              hint: `مانده ${balanceLabel(i.balance)} ${i.currency ?? ""}`,
-            }))}
-            value={invoiceId}
-            onChange={setInvoiceId}
+            label="تأمین‌کننده"
+            placeholder={supplierOptions.length ? "جست‌وجو و انتخاب تأمین‌کننده…" : "فاکتوری برای پرداخت وجود ندارد"}
+            emptyText="تأمین‌کننده‌ای پیدا نشد"
+            disabled={supplierOptions.length === 0}
+            options={supplierOptions}
+            value={supplierId}
+            onChange={selectSupplier}
           />
         </div>
 
-        {selected && (
+        {supplierId && (
           <div className="sm:col-span-2">
-            <Note type={selected.balance > 0 ? "warning" : "success"}>
-              فاکتور {selected.invoice_no} — مبلغ کل {money(selected.total_amount)}{" "}
-              {selected.currency}، پرداخت‌شده {money(selected.paid)}، مانده{" "}
-              <b>
-                {balanceLabel(selected.balance)} {selected.currency}
-              </b>{" "}
-              <Badge tone={statusTone(selected.payment_status)}>{selected.payment_status}</Badge>
-            </Note>
+            {supplierInvoices.length === 0 ? (
+              <Note type="warning">این تأمین‌کننده فاکتوری ندارد</Note>
+            ) : (
+              <div className="scroll-x rounded-md border border-[var(--geist-border)]">
+                <table>
+                  <thead>
+                    <tr>
+                      <th></th>
+                      <th>فاکتور</th>
+                      <th>سررسید</th>
+                      <th>مانده</th>
+                      <th>مبلغ این پرداخت</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {supplierInvoices.map((i) => (
+                      <tr key={i.id}>
+                        <td>
+                          <input type="checkbox" checked={checked.has(i.id)} onChange={() => toggle(i.id)} />
+                          {checked.has(i.id) && <input type="hidden" name="invoice_id" value={i.id} />}
+                        </td>
+                        <td>
+                          {i.invoice_no}{" "}
+                          <Badge tone={statusTone(i.payment_status)}>{i.payment_status}</Badge>
+                        </td>
+                        <td>{i.due_date ? <DateText value={i.due_date} /> : "—"}</td>
+                        <td className="num">
+                          {balanceLabel(i.balance)} {i.currency}
+                        </td>
+                        <td>
+                          {checked.has(i.id) ? (
+                            <NumberInput key={i.id} name="amount" defaultValue={Math.max(0, i.balance)} />
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {mixedCurrency && (
+              <div className="mt-2">
+                <Note type="error">فاکتورهای انتخاب‌شده ارزهای متفاوتی دارند؛ فقط فاکتورهای هم‌ارز را با هم پرداخت کنید</Note>
+              </div>
+            )}
           </div>
         )}
 
         <DateInput name="payment_date" label="تاریخ پرداخت" />
-        <NumberInput
-          key={invoiceId}
-          name="amount"
-          label={`مبلغ${selected?.currency ? ` (${selected.currency})` : ""}`}
-          defaultValue={Math.max(0, selected?.balance ?? 0)}
-        />
         <SelectField name="method" label="روش پرداخت" defaultValue={PAY_METHODS[0]} options={PAY_METHODS} />
         <Input name="reference" label="مرجع/رسید" />
         <div className="sm:col-span-2">
           <Input name="notes" label="توضیحات" />
         </div>
         <div className="flex gap-2 sm:col-span-2">
-          <Submit disabled={!invoiceId}>ثبت پرداخت</Submit>
+          <Submit disabled={checkedInvoices.length === 0 || mixedCurrency}>ثبت پرداخت</Submit>
           <Button onClick={() => setOpen(false)}>انصراف</Button>
         </div>
       </ActionForm>
@@ -204,14 +290,14 @@ export function NewPaymentModal({
   );
 }
 
-export function NewPaymentTrigger({ invoices }: { invoices: Invoice[] }) {
+export function NewPaymentTrigger({ invoices, suppliers }: { invoices: Invoice[]; suppliers: Supplier[] }) {
   const [open, setOpen] = useOpenParam("payment");
   return (
     <>
       <Button variant="primary" onClick={() => setOpen(true)}>
         + ثبت پرداخت
       </Button>
-      <NewPaymentModal open={open} setOpen={setOpen} invoices={invoices} />
+      <NewPaymentModal open={open} setOpen={setOpen} invoices={invoices} suppliers={suppliers} />
     </>
   );
 }

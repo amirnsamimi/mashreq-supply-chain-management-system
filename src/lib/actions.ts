@@ -490,27 +490,59 @@ export async function deleteItem(fd: FormData) {
 
 /* ================= پرداخت ================= */
 
+/** یک پرداخت می‌تواند بین چند فاکتور همان تأمین‌کننده تقسیم شود */
+type PaymentAllocationInput = { invoice_id: number; amount: number };
+
+function parseAllocations(fd: FormData): PaymentAllocationInput[] {
+  const invoiceIds = fd.getAll("invoice_id").map((v) => Number(v));
+  const amounts = fd.getAll("amount").map((v) => parseFloat(String(v).replace(/,/g, "")));
+  return invoiceIds
+    .map((invoice_id, idx) => ({ invoice_id, amount: amounts[idx] }))
+    .filter((a) => Number.isInteger(a.invoice_id) && a.invoice_id > 0 && Number.isFinite(a.amount) && a.amount > 0);
+}
+
 export async function createPayment(_prev: FormResult, fd: FormData): Promise<FormResult> {
   const me = await requireAuth();
-  const invoiceId = Number(fd.get("invoice_id"));
-  const amount = n(fd, "amount") ?? 0;
-  if (amount <= 0) return err("مبلغ پرداخت باید بزرگ‌تر از صفر باشد");
+  const supplierIdRaw = s(fd, "supplier_id");
+  const supplierId = supplierIdRaw ? Number(supplierIdRaw) : null;
 
-  const [inv] = await sql`
-    select invoice_no, total_amount,
-      coalesce((select sum(amount) from payments where invoice_id = ${invoiceId}), 0) as paid
-    from invoices where id = ${invoiceId}
-  `;
-  if (!inv) return err("فاکتور پیدا نشد");
+  const allocations = parseAllocations(fd);
+  if (allocations.length === 0) return err("حداقل یک فاکتور با مبلغ معتبر انتخاب کنید");
 
-  const [row] = await sql`
-    insert into payments (invoice_id, payment_date, amount, method, reference, notes)
-    values (${invoiceId}, ${s(fd, "payment_date")}, ${amount},
-            ${s(fd, "method")}, ${s(fd, "reference")}, ${s(fd, "notes")})
-    returning id
-  `;
-  await logAudit(me, "ایجاد", "payment", Number(row.id), `${money(amount)} برای فاکتور ${inv.invoice_no}`);
-  revalidatePath(`/invoices/${invoiceId}`);
+  const invoices: { id: number; invoice_no: string }[] = [];
+  let currency: string | null = null;
+  for (const a of allocations) {
+    const [inv] = await sql`select id, invoice_no, supplier_id, currency from invoices where id = ${a.invoice_id}`;
+    if (!inv) return err("یکی از فاکتورها پیدا نشد");
+    if (supplierId && Number(inv.supplier_id) !== supplierId) {
+      return err(`فاکتور ${inv.invoice_no} متعلق به این تأمین‌کننده نیست`);
+    }
+    if (currency === null) currency = inv.currency as string | null;
+    else if (currency !== inv.currency) {
+      return err("همه فاکتورهای این پرداخت باید یک ارز داشته باشند");
+    }
+    invoices.push({ id: Number(inv.id), invoice_no: String(inv.invoice_no) });
+  }
+
+  const total = allocations.reduce((sum, a) => sum + a.amount, 0);
+
+  const paymentId = await sql.begin(async (tx) => {
+    const [row] = await tx`
+      insert into payments (supplier_id, payment_date, amount, method, reference, notes)
+      values (${supplierId}, ${s(fd, "payment_date")}, ${total},
+              ${s(fd, "method")}, ${s(fd, "reference")}, ${s(fd, "notes")})
+      returning id
+    `;
+    for (const a of allocations) {
+      await tx`insert into payment_allocations (payment_id, invoice_id, amount) values (${row.id}, ${a.invoice_id}, ${a.amount})`;
+    }
+    return Number(row.id);
+  });
+
+  const invoiceNos = invoices.map((i) => i.invoice_no).join("، ");
+  await logAudit(me, "ایجاد", "payment", paymentId, `${money(total)} برای فاکتور ${invoiceNos}`);
+  for (const inv of invoices) revalidatePath(`/invoices/${inv.id}`);
+  revalidatePath("/payments");
   revalidatePath("/");
   return ok("پرداخت ثبت شد");
 }
@@ -518,9 +550,11 @@ export async function createPayment(_prev: FormResult, fd: FormData): Promise<Fo
 export async function deletePayment(fd: FormData) {
   const me = await requireAuth();
   const id = Number(fd.get("id"));
+  const affected = await sql`select invoice_id from payment_allocations where payment_id = ${id}`;
   const [row] = await sql`delete from payments where id = ${id} returning amount`;
   if (row) await logAudit(me, "حذف", "payment", id, `پرداخت ${money(row.amount)}`);
-  revalidatePath(`/invoices/${Number(fd.get("invoice_id"))}`);
+  for (const r of affected) revalidatePath(`/invoices/${Number(r.invoice_id)}`);
+  revalidatePath("/payments");
 }
 
 /* ================= پارت ارسال ================= */

@@ -119,6 +119,37 @@ create table if not exists suppliers (
 );
 alter table invoices add column if not exists supplier_id integer references suppliers(id) on delete set null;
 create index if not exists idx_invoices_supplier on invoices(supplier_id);
+
+-- فاکتورهای قدیمی بدون تأمین‌کننده (داده وارداتی که ستون تأمین‌کننده نداشت) به «MIA» نسبت داده می‌شوند
+insert into suppliers (name) values ('MIA') on conflict (name) do nothing;
+update invoices set supplier_id = (select id from suppliers where name = 'MIA')
+where supplier_id is null;
+
+-- پرداخت به تأمین‌کننده تعلق دارد و می‌تواند بین چند فاکتور او تقسیم شود
+alter table payments add column if not exists supplier_id integer references suppliers(id) on delete set null;
+alter table payments alter column invoice_id drop not null;
+
+create table if not exists payment_allocations (
+  id         serial primary key,
+  payment_id integer not null references payments(id) on delete cascade,
+  invoice_id integer not null references invoices(id) on delete cascade,
+  amount     numeric(18,2) not null default 0,
+  unique (payment_id, invoice_id)
+);
+create index if not exists idx_pa_payment on payment_allocations(payment_id);
+create index if not exists idx_pa_invoice on payment_allocations(invoice_id);
+
+-- انتقال پرداخت‌های قدیمی (invoice_id مستقیم) به مدل تخصیص، بدون تکرار در اجراهای بعدی
+insert into payment_allocations (payment_id, invoice_id, amount)
+select p.id, p.invoice_id, p.amount
+from payments p
+where p.invoice_id is not null
+  and not exists (select 1 from payment_allocations pa where pa.payment_id = p.id);
+
+update payments p set supplier_id = i.supplier_id
+from invoices i
+where p.invoice_id = i.id and p.supplier_id is null;
+
 -- قالب‌های اعلان که کاربر خودش می‌سازد
 create table if not exists notification_rules (
   id             serial primary key,

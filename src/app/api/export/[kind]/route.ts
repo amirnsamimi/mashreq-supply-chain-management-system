@@ -114,9 +114,11 @@ export async function GET(
     filename = "تخصیص-اقلام";
   } else if (kind === "payments") {
     const rows = await sql`
-      select i.invoice_no, i.currency, p.payment_date::text, p.amount, p.method, p.reference, p.notes
-      from payments p join invoices i on i.id = p.invoice_id
-      order by p.payment_date nulls last, p.id
+      select i.invoice_no, i.currency, pay.payment_date::text, pa.amount, pay.method, pay.reference, pay.notes
+      from payment_allocations pa
+      join payments pay on pay.id = pa.payment_id
+      join invoices i on i.id = pa.invoice_id
+      order by pay.payment_date nulls last, pay.id
     `;
     content = csv(
       ["شماره فاکتور","ارز","تاریخ پرداخت","مبلغ","روش","مرجع/رسید","توضیحات"],

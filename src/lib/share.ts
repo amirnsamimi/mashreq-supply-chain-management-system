@@ -95,9 +95,10 @@ export async function invoiceByToken(token: string): Promise<PublicInvoice | nul
 
   const [inv] = await sql`
     select i.*,
-      coalesce((select sum(amount) from payments where invoice_id = i.id), 0) as paid,
-      (select count(*)::int from payments where invoice_id = i.id) as payment_count,
-      (select max(payment_date)::text from payments where invoice_id = i.id) as last_payment_date
+      coalesce((select sum(amount) from payment_allocations where invoice_id = i.id), 0) as paid,
+      (select count(*)::int from payment_allocations where invoice_id = i.id) as payment_count,
+      (select max(pay.payment_date)::text from payment_allocations pa
+        join payments pay on pay.id = pa.payment_id where pa.invoice_id = i.id) as last_payment_date
     from invoices i where i.id = ${invoiceId}
   `;
   if (!inv) return null;
@@ -187,7 +188,7 @@ export async function invoiceByToken(token: string): Promise<PublicInvoice | nul
 export async function invoiceMoney(invoiceId: number): Promise<InvoiceMoney> {
   const [inv] = await sql`
     select i.total_amount,
-      coalesce((select sum(amount) from payments where invoice_id = i.id), 0) as paid,
+      coalesce((select sum(amount) from payment_allocations where invoice_id = i.id), 0) as paid,
       coalesce((select sum(qty * unit_price) from invoice_items where invoice_id = i.id), 0) as items_total
     from invoices i where i.id = ${invoiceId}
   `;

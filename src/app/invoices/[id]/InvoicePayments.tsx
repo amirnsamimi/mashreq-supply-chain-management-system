@@ -8,22 +8,22 @@ import { DateText } from "@/components/DateText";
 
 type Payment = {
   id: number;
+  payment_id: number;
   payment_date: string | null;
   amount: number;
   method: string | null;
   reference: string | null;
   notes: string | null;
+  invoice_count: number;
 };
 
 /** فهرست پرداخت‌های همین فاکتور — ثبت پرداخت جدید در صفحه «پرداخت‌ها» انجام می‌شود */
 export function InvoicePaymentsCard({
-  invoiceId,
   invoiceNo,
   payments,
   balance,
   currency,
 }: {
-  invoiceId: number;
   invoiceNo: string;
   payments: Payment[];
   balance: number;
@@ -69,14 +69,17 @@ export function InvoicePaymentsCard({
                   <td className="text-[var(--geist-secondary)]">{p.notes ?? "—"}</td>
                   <td>
                     <form action={deletePayment}>
-                      <input type="hidden" name="id" value={p.id} />
-                      <input type="hidden" name="invoice_id" value={invoiceId} />
+                      <input type="hidden" name="id" value={p.payment_id} />
                       <Button
                         htmlType="submit"
                         size="tiny"
                         variant="tertiary"
                         className="!text-[var(--geist-red-text)]"
-                        confirm="این پرداخت حذف شود؟"
+                        confirm={
+                          p.invoice_count > 1
+                            ? `این پرداخت بین ${p.invoice_count} فاکتور تقسیم شده؛ حذف آن، تخصیص به همه آن فاکتورها را پاک می‌کند. ادامه؟`
+                            : "این پرداخت حذف شود؟"
+                        }
                       >
                         حذف
                       </Button>

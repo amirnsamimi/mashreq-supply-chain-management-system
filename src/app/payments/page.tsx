@@ -1,5 +1,5 @@
 import { requirePermission } from "@/lib/auth";
-import { PAYMENT_SORTS, listInvoices, listPaymentsPaged } from "@/lib/queries";
+import { PAYMENT_SORTS, listInvoices, listPaymentsPaged, listSuppliers } from "@/lib/queries";
 import { parseParams } from "@/lib/paging";
 import { money } from "@/lib/format";
 import { Page } from "@/components/Nav";
@@ -17,6 +17,7 @@ export default async function PaymentsPage({
   const params = parseParams(await searchParams, PAYMENT_SORTS, "payment_date");
   const payments = await listPaymentsPaged(params);
   const invoices = await listInvoices();
+  const suppliers = await listSuppliers();
 
   // جمع‌ها به تفکیک ارز، چون جمع کردن ارزهای مختلف بی‌معناست
   const byCurrency = new Map<string, { paid: number; balance: number }>();
@@ -35,7 +36,7 @@ export default async function PaymentsPage({
       title="پرداخت‌ها"
       user={`${me.first_name} ${me.last_name}`}
       permissions={me.permissions}
-      action={<NewPaymentTrigger invoices={invoices} />}
+      action={<NewPaymentTrigger invoices={invoices} suppliers={suppliers} />}
     >
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="تعداد پرداخت‌ها" value={payments.total} />
@@ -57,7 +58,7 @@ export default async function PaymentsPage({
       </div>
 
       <div className="mt-6">
-        <PaymentsClient page={payments} invoices={invoices} />
+        <PaymentsClient page={payments} invoices={invoices} suppliers={suppliers} />
       </div>
     </Page>
   );

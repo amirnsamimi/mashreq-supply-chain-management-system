@@ -58,8 +58,9 @@ const invoiceSelect = () => sql`
     from invoice_items where invoice_id = i.id
   ) it on true
   left join lateral (
-    select sum(amount) as paid, max(payment_date)::text as last_payment_date
-    from payments where invoice_id = i.id
+    select sum(pa.amount) as paid, max(pay.payment_date)::text as last_payment_date
+    from payment_allocations pa join payments pay on pay.id = pa.payment_id
+    where pa.invoice_id = i.id
   ) p on true
 `;
 
@@ -289,15 +290,23 @@ export async function listAllocationsForItem(itemId: number) {
 
 export async function listPayments(invoiceId: number) {
   const rows = await sql`
-    select * from payments where invoice_id = ${invoiceId} order by payment_date nulls last, id
+    select pa.id, pa.amount, pay.id as payment_id, pay.payment_date, pay.method, pay.reference, pay.notes,
+      (select count(*)::int from payment_allocations where payment_id = pay.id) as invoice_count
+    from payment_allocations pa
+    join payments pay on pay.id = pa.payment_id
+    where pa.invoice_id = ${invoiceId}
+    order by pay.payment_date nulls last, pay.id
   `;
   return rows.map((r) => ({
     id: r.id as number,
+    payment_id: r.payment_id as number,
     payment_date: d(r.payment_date),
     method: (r.method as string | null) ?? null,
     reference: (r.reference as string | null) ?? null,
     notes: (r.notes as string | null) ?? null,
     amount: num(r.amount),
+    /** این پرداخت چند فاکتور را پوشش می‌دهد؛ برای هشدار هنگام حذف */
+    invoice_count: num(r.invoice_count),
   }));
 }
 
@@ -407,8 +416,10 @@ export async function listProducts(): Promise<Product[]> {
 
 /* ---------- پرداخت‌ها (همه فاکتورها) ---------- */
 
+/** یک ردیف = تخصیص یک پرداخت به یک فاکتور؛ یک پرداخت می‌تواند چند ردیف (چند فاکتور) داشته باشد */
 export type PaymentRow = {
   id: number;
+  payment_id: number;
   invoice_id: number;
   invoice_no: string;
   supplier: string | null;
@@ -418,11 +429,14 @@ export type PaymentRow = {
   method: string | null;
   reference: string | null;
   notes: string | null;
+  /** این پرداخت چند فاکتور را پوشش می‌دهد؛ برای هشدار هنگام حذف */
+  invoice_count: number;
 };
 
 function shapePayment(r: Record<string, unknown>): PaymentRow {
   return {
     id: Number(r.id),
+    payment_id: Number(r.payment_id),
     invoice_id: Number(r.invoice_id),
     invoice_no: String(r.invoice_no),
     supplier: (r.supplier as string | null) ?? null,
@@ -432,15 +446,24 @@ function shapePayment(r: Record<string, unknown>): PaymentRow {
     method: (r.method as string | null) ?? null,
     reference: (r.reference as string | null) ?? null,
     notes: (r.notes as string | null) ?? null,
+    invoice_count: num(r.invoice_count),
   };
 }
 
+const paymentAllocationSelect = () => sql`
+  select pa.id, pa.amount, pa.invoice_id, pay.id as payment_id,
+    pay.payment_date, pay.method, pay.reference, pay.notes,
+    i.invoice_no, i.supplier, i.currency,
+    (select count(*)::int from payment_allocations where payment_id = pay.id) as invoice_count
+  from payment_allocations pa
+  join payments pay on pay.id = pa.payment_id
+  join invoices i on i.id = pa.invoice_id
+`;
+
 export async function listAllPayments(): Promise<PaymentRow[]> {
   const rows = await sql`
-    select p.*, i.invoice_no, i.supplier, i.currency
-    from payments p
-    join invoices i on i.id = p.invoice_id
-    order by p.payment_date desc nulls last, p.id desc
+    ${paymentAllocationSelect()}
+    order by pay.payment_date desc nulls last, pay.id desc
   `;
   return rows.map(shapePayment);
 }
@@ -574,10 +597,7 @@ export const PAYMENT_SORTS = [
 ] as const;
 
 export async function listPaymentsPaged(p: PageParams): Promise<Paged<PaymentRow>> {
-  const base = sql`
-    select pay.*, i.invoice_no, i.supplier, i.currency
-    from payments pay join invoices i on i.id = pay.invoice_id
-  `;
+  const base = paymentAllocationSelect();
   const where = p.q
     ? sql`where t.invoice_no ilike ${like(p.q)} or coalesce(t.supplier,'') ilike ${like(p.q)}
             or coalesce(t.method,'') ilike ${like(p.q)} or coalesce(t.reference,'') ilike ${like(p.q)}`
@@ -609,7 +629,7 @@ export async function listSuppliersPaged(p: PageParams): Promise<Paged<Supplier>
       select count(*) as invoice_count,
              sum(i.total_amount) as total_amount,
              sum(i.total_amount - coalesce((
-               select sum(amount) from payments where invoice_id = i.id
+               select sum(amount) from payment_allocations where invoice_id = i.id
              ), 0)) as balance
       from invoices i where i.supplier_id = s.id
     ) a on true

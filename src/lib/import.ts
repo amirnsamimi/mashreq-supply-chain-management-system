@@ -389,20 +389,24 @@ export async function importWorkbook(
       const payDate = date(pick(r, "تاریخ پرداخت"));
       const reference = text(pick(r, "مرجع/رسید"));
       const dupPay = await sql`
-        select id from payments
-        where invoice_id = ${invoiceId} and amount = ${amount}
-          and payment_date is not distinct from ${payDate}
-          and reference is not distinct from ${reference}
+        select p.id from payments p
+        join payment_allocations pa on pa.payment_id = p.id
+        where pa.invoice_id = ${invoiceId} and p.amount = ${amount}
+          and p.payment_date is not distinct from ${payDate}
+          and p.reference is not distinct from ${reference}
       `;
       if (dupPay.length) {
         warnings.push(`پرداخت ${amount} فاکتور ${invNo} از قبل ثبت شده بود و دوباره اضافه نشد`);
         continue;
       }
-      await sql`
-        insert into payments (invoice_id, payment_date, amount, method, reference, notes)
-        values (${invoiceId}, ${payDate}, ${amount},
+      const [inv] = await sql`select supplier_id from invoices where id = ${invoiceId}`;
+      const [payRow] = await sql`
+        insert into payments (supplier_id, payment_date, amount, method, reference, notes)
+        values (${inv.supplier_id}, ${payDate}, ${amount},
                 ${text(pick(r, "روش پرداخت"))}, ${reference}, ${text(pick(r, "توضیحات"))})
+        returning id
       `;
+      await sql`insert into payment_allocations (payment_id, invoice_id, amount) values (${payRow.id}, ${invoiceId}, ${amount})`;
       counts["پرداخت"]++;
     }
   }

@@ -65,6 +65,20 @@ export function SuppliersClient({ page }: { page: Paged<Supplier> }) {
       total: (rows) => <span className="num">{money(rows.reduce((s, r) => s + r.balance, 0))}</span>,
     },
     {
+      key: "wallet_balance",
+      header: "کیف‌پول",
+      sortable: false,
+      value: (r) => r.wallet_balances.map((w) => `${w.balance} ${w.currency}`).join("، "),
+      render: (r) =>
+        r.wallet_balances.length === 0 ? (
+          "—"
+        ) : (
+          <span className="num font-medium text-[var(--geist-green-text)]">
+            {r.wallet_balances.map((w) => `${money(w.balance)} ${w.currency}`).join("، ")}
+          </span>
+        ),
+    },
+    {
       key: "is_active",
       header: "وضعیت",
       value: (r) => (r.is_active ? "فعال" : "غیرفعال"),

@@ -150,6 +150,36 @@ update payments p set supplier_id = i.supplier_id
 from invoices i
 where p.invoice_id = i.id and p.supplier_id is null;
 
+-- کیف‌پول تأمین‌کننده: دفتر تراکنش‌های اعتباری، به تفکیک ارز (اعتبار یک ارز نباید فاکتور ارز دیگر را پوشش دهد).
+-- مبلغ مثبت=واریز اعتبار (اضافه‌پرداخت یک فاکتور)، منفی=مصرف اعتبار (استفاده در فاکتور دیگر).
+-- موجودی کیف‌پول یک ارز = مجموع ردیف‌های همان ارز.
+create table if not exists supplier_credits (
+  id          serial primary key,
+  supplier_id integer not null references suppliers(id) on delete cascade,
+  currency    text not null,
+  amount      numeric(18,2) not null,
+  payment_id  integer references payments(id) on delete cascade,
+  notes       text,
+  created_at  timestamptz not null default now()
+);
+create index if not exists idx_supplier_credits_supplier on supplier_credits(supplier_id, currency);
+
+-- اضافه‌پرداخت‌های قدیمی هر فاکتور (paid > total_amount) را به کیف‌پول همان تأمین‌کننده/ارز منتقل می‌کند
+insert into supplier_credits (supplier_id, currency, amount, notes)
+select i.supplier_id, coalesce(i.currency, 'RMB'), (coalesce(pa.paid, 0) - i.total_amount),
+  'انتقال خودکار اضافه‌پرداخت فاکتور ' || i.invoice_no
+from invoices i
+join lateral (
+  select sum(amount) as paid from payment_allocations where invoice_id = i.id
+) pa on true
+where i.supplier_id is not null
+  and coalesce(pa.paid, 0) > i.total_amount + 0.005
+  and not exists (
+    select 1 from supplier_credits sc
+    where sc.supplier_id = i.supplier_id
+      and sc.notes = 'انتقال خودکار اضافه‌پرداخت فاکتور ' || i.invoice_no
+  );
+
 -- قالب‌های اعلان که کاربر خودش می‌سازد
 create table if not exists notification_rules (
   id             serial primary key,

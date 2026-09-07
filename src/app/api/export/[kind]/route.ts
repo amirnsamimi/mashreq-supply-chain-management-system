@@ -59,8 +59,12 @@ export async function GET(
   } else if (kind === "suppliers") {
     const rows = await listSuppliers();
     content = csv(
-      ["نام تأمین‌کننده","شخص رابط","تلفن","ایمیل","کشور","شهر","آدرس","تعداد فاکتور","جمع خرید","مانده بدهی","وضعیت","توضیحات"],
-      rows.map((r) => [r.name, r.contact, r.phone, r.email, r.country, r.city, r.address, r.invoice_count, r.total_amount, r.balance, r.is_active ? "فعال" : "غیرفعال", r.notes])
+      ["نام تأمین‌کننده","شخص رابط","تلفن","ایمیل","کشور","شهر","آدرس","تعداد فاکتور","جمع خرید","مانده بدهی","کیف‌پول","وضعیت","توضیحات"],
+      rows.map((r) => [
+        r.name, r.contact, r.phone, r.email, r.country, r.city, r.address, r.invoice_count, r.total_amount, r.balance,
+        r.wallet_balances.map((w) => `${w.balance} ${w.currency}`).join("، "),
+        r.is_active ? "فعال" : "غیرفعال", r.notes,
+      ])
     );
     filename = "تأمین-کنندگان";
   } else if (kind === "products") {

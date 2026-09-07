@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { sql } from "./db";
 import { logAudit } from "./audit";
+import { getSupplierWalletBalance } from "./queries";
 import {
   clearLoginFailures,
   currentUser,
@@ -490,14 +491,24 @@ export async function deleteItem(fd: FormData) {
 
 /* ================= پرداخت ================= */
 
-/** یک پرداخت می‌تواند بین چند فاکتور همان تأمین‌کننده تقسیم شود */
-type PaymentAllocationInput = { invoice_id: number; amount: number };
+/**
+ * یک پرداخت می‌تواند بین چند فاکتور همان تأمین‌کننده تقسیم شود.
+ * هر ردیف یا از محل «نقد» (پول تازه) است یا از محل «اعتبار» کیف‌پول همان تأمین‌کننده.
+ * اگر مبلغ واردشده برای یک فاکتور از مانده‌اش بیشتر باشد، مازاد (فقط وقتی منبع نقد است)
+ * به‌صورت خودکار به کیف‌پول تأمین‌کننده واریز می‌شود — روی خود فاکتور منفی نمی‌ماند.
+ */
+type PaymentAllocationInput = { invoice_id: number; amount: number; source: "cash" | "credit" };
 
 function parseAllocations(fd: FormData): PaymentAllocationInput[] {
   const invoiceIds = fd.getAll("invoice_id").map((v) => Number(v));
   const amounts = fd.getAll("amount").map((v) => parseFloat(String(v).replace(/,/g, "")));
+  const sources = fd.getAll("source").map((v) => String(v));
   return invoiceIds
-    .map((invoice_id, idx) => ({ invoice_id, amount: amounts[idx] }))
+    .map((invoice_id, idx) => ({
+      invoice_id,
+      amount: amounts[idx],
+      source: sources[idx] === "credit" ? ("credit" as const) : ("cash" as const),
+    }))
     .filter((a) => Number.isInteger(a.invoice_id) && a.invoice_id > 0 && Number.isFinite(a.amount) && a.amount > 0);
 }
 
@@ -508,11 +519,19 @@ export async function createPayment(_prev: FormResult, fd: FormData): Promise<Fo
 
   const allocations = parseAllocations(fd);
   if (allocations.length === 0) return err("حداقل یک فاکتور با مبلغ معتبر انتخاب کنید");
+  if (allocations.some((a) => a.source === "credit") && !supplierId) {
+    return err("برای استفاده از اعتبار کیف‌پول باید تأمین‌کننده مشخص باشد");
+  }
 
-  const invoices: { id: number; invoice_no: string }[] = [];
+  const invoiceById = new Map<number, { id: number; invoice_no: string; balance: number }>();
   let currency: string | null = null;
   for (const a of allocations) {
-    const [inv] = await sql`select id, invoice_no, supplier_id, currency from invoices where id = ${a.invoice_id}`;
+    if (invoiceById.has(a.invoice_id)) continue;
+    const [inv] = await sql`
+      select i.id, i.invoice_no, i.supplier_id, i.currency, i.total_amount,
+        coalesce((select sum(amount) from payment_allocations where invoice_id = i.id), 0) as paid
+      from invoices i where i.id = ${a.invoice_id}
+    `;
     if (!inv) return err("یکی از فاکتورها پیدا نشد");
     if (supplierId && Number(inv.supplier_id) !== supplierId) {
       return err(`فاکتور ${inv.invoice_no} متعلق به این تأمین‌کننده نیست`);
@@ -521,28 +540,76 @@ export async function createPayment(_prev: FormResult, fd: FormData): Promise<Fo
     else if (currency !== inv.currency) {
       return err("همه فاکتورهای این پرداخت باید یک ارز داشته باشند");
     }
-    invoices.push({ id: Number(inv.id), invoice_no: String(inv.invoice_no) });
+    const balance = Math.max(0, Number(inv.total_amount) - Number(inv.paid));
+    invoiceById.set(a.invoice_id, { id: Number(inv.id), invoice_no: String(inv.invoice_no), balance });
   }
 
-  const total = allocations.reduce((sum, a) => sum + a.amount, 0);
+  let walletBalance = 0;
+  if (supplierId && currency) walletBalance = await getSupplierWalletBalance(supplierId, currency);
+  const creditRequested = allocations.filter((a) => a.source === "credit").reduce((s2, a) => s2 + a.amount, 0);
+  if (creditRequested > walletBalance + 0.005) {
+    return err(`اعتبار کافی در کیف‌پول این تأمین‌کننده (${currency ?? ""}) نیست. اعتبار موجود: ${money(walletBalance)}`);
+  }
+
+  // برای هر فاکتور، ابتدا اعتبار و سپس نقد را روی مانده اعمال می‌کنیم؛ مازاد نقد به کیف‌پول واریز می‌شود
+  const invoiceApplied = new Map<number, number>();
+  let creditConsumed = 0;
+  let walletDeposit = 0;
+  let netCash = 0;
+  for (const [invoiceId, inv] of invoiceById) {
+    let remaining = inv.balance;
+    const rows = allocations.filter((a) => a.invoice_id === invoiceId);
+
+    const creditAmount = rows.filter((a) => a.source === "credit").reduce((s2, a) => s2 + a.amount, 0);
+    const creditApplied = Math.min(creditAmount, remaining);
+    remaining -= creditApplied;
+    creditConsumed += creditApplied;
+
+    const cashAmount = rows.filter((a) => a.source === "cash").reduce((s2, a) => s2 + a.amount, 0);
+    const cashApplied = Math.min(cashAmount, remaining);
+    walletDeposit += cashAmount - cashApplied; // مازاد نقد نسبت به مانده فاکتور
+    netCash += cashAmount;
+
+    const applied = creditApplied + cashApplied;
+    if (applied > 0.005) invoiceApplied.set(invoiceId, applied);
+  }
 
   const paymentId = await sql.begin(async (tx) => {
     const [row] = await tx`
       insert into payments (supplier_id, payment_date, amount, method, reference, notes)
-      values (${supplierId}, ${s(fd, "payment_date")}, ${total},
+      values (${supplierId}, ${s(fd, "payment_date")}, ${netCash},
               ${s(fd, "method")}, ${s(fd, "reference")}, ${s(fd, "notes")})
       returning id
     `;
-    for (const a of allocations) {
-      await tx`insert into payment_allocations (payment_id, invoice_id, amount) values (${row.id}, ${a.invoice_id}, ${a.amount})`;
+    for (const [invoiceId, applied] of invoiceApplied) {
+      await tx`insert into payment_allocations (payment_id, invoice_id, amount) values (${row.id}, ${invoiceId}, ${applied})`;
+    }
+    if (supplierId && currency && walletDeposit > 0.005) {
+      await tx`
+        insert into supplier_credits (supplier_id, currency, amount, payment_id, notes)
+        values (${supplierId}, ${currency}, ${walletDeposit}, ${row.id}, ${"اضافه‌پرداخت این تراکنش"})
+      `;
+    }
+    if (supplierId && currency && creditConsumed > 0.005) {
+      await tx`
+        insert into supplier_credits (supplier_id, currency, amount, payment_id, notes)
+        values (${supplierId}, ${currency}, ${-creditConsumed}, ${row.id}, ${"مصرف اعتبار در این تراکنش"})
+      `;
     }
     return Number(row.id);
   });
 
-  const invoiceNos = invoices.map((i) => i.invoice_no).join("، ");
-  await logAudit(me, "ایجاد", "payment", paymentId, `${money(total)} برای فاکتور ${invoiceNos}`);
-  for (const inv of invoices) revalidatePath(`/invoices/${inv.id}`);
+  const invoiceNos = [...invoiceApplied.keys()]
+    .map((id) => invoiceById.get(id)?.invoice_no)
+    .filter(Boolean)
+    .join("، ");
+  const parts = [];
+  if (netCash > 0.005) parts.push(`${money(netCash)} نقد`);
+  if (creditConsumed > 0.005) parts.push(`${money(creditConsumed)} از اعتبار`);
+  await logAudit(me, "ایجاد", "payment", paymentId, `${parts.join(" + ")} برای فاکتور ${invoiceNos}`);
+  for (const invoiceId of invoiceApplied.keys()) revalidatePath(`/invoices/${invoiceId}`);
   revalidatePath("/payments");
+  revalidatePath("/suppliers");
   revalidatePath("/");
   return ok("پرداخت ثبت شد");
 }

@@ -78,7 +78,7 @@ function shapeInvoice(r: Record<string, unknown>) {
   const total = num(r.total_amount);
   const itemsTotal = num(r.items_total);
   const paid = num(r.paid);
-  const balance = total - paid;
+  const balance = Math.max(0, total - paid);
   return {
     id: r.id as number,
     invoice_no: r.invoice_no as string,
@@ -484,15 +484,31 @@ export type Supplier = {
   invoice_count: number;
   total_amount: number;
   balance: number;
+  /** موجودی کیف‌پول به تفکیک ارز: اعتبار حاصل از اضافه‌پرداخت‌ها که هنوز مصرف نشده */
+  wallet_balances: { currency: string; balance: number }[];
 };
 
 export async function listSuppliers(): Promise<Supplier[]> {
   const invoices = await listInvoices();
-  const rows = await sql`select * from suppliers order by name`;
+  const rows = await sql`
+    select s.*, coalesce(c.wallet_balances, '[]') as wallet_balances
+    from suppliers s
+    left join lateral (
+      select json_agg(json_build_object('currency', currency, 'balance', total)) as wallet_balances
+      from (
+        select currency, sum(amount) as total
+        from supplier_credits where supplier_id = s.id
+        group by currency
+        having sum(amount) > 0.005
+      ) g
+    ) c on true
+    order by s.name
+  `;
 
   return rows.map((r) => {
     const id = Number(r.id);
     const mine = invoices.filter((i) => i.supplier_id === id);
+    const walletRaw = (r.wallet_balances as unknown as { currency: string; balance: unknown }[]) ?? [];
     return {
       id,
       name: String(r.name),
@@ -507,6 +523,7 @@ export async function listSuppliers(): Promise<Supplier[]> {
       invoice_count: mine.length,
       total_amount: mine.reduce((s, i) => s + i.total_amount, 0),
       balance: mine.reduce((s, i) => s + i.balance, 0),
+      wallet_balances: walletRaw.map((w) => ({ currency: String(w.currency), balance: num(w.balance) })),
     };
   });
 }
@@ -621,18 +638,28 @@ export async function listSuppliersPaged(p: PageParams): Promise<Paged<Supplier>
   // مبالغ از فاکتورها می‌آید، پس همان‌جا در SQL حساب می‌شود تا مرتب‌سازی درست باشد
   const base = sql`
     select s.*,
-      coalesce(a.invoice_count, 0) as invoice_count,
-      coalesce(a.total_amount, 0)  as total_amount,
-      coalesce(a.balance, 0)       as balance
+      coalesce(a.invoice_count, 0)   as invoice_count,
+      coalesce(a.total_amount, 0)    as total_amount,
+      coalesce(a.balance, 0)         as balance,
+      coalesce(c.wallet_balances, '[]') as wallet_balances
     from suppliers s
     left join lateral (
       select count(*) as invoice_count,
              sum(i.total_amount) as total_amount,
-             sum(i.total_amount - coalesce((
+             sum(greatest(i.total_amount - coalesce((
                select sum(amount) from payment_allocations where invoice_id = i.id
-             ), 0)) as balance
+             ), 0), 0)) as balance
       from invoices i where i.supplier_id = s.id
     ) a on true
+    left join lateral (
+      select json_agg(json_build_object('currency', currency, 'balance', total)) as wallet_balances
+      from (
+        select currency, sum(amount) as total
+        from supplier_credits where supplier_id = s.id
+        group by currency
+        having sum(amount) > 0.005
+      ) g
+    ) c on true
   `;
   const where = p.q
     ? sql`where t.name ilike ${like(p.q)} or coalesce(t.contact,'') ilike ${like(p.q)}
@@ -648,22 +675,35 @@ export async function listSuppliersPaged(p: PageParams): Promise<Paged<Supplier>
   const [{ n }] = await sql`select count(*)::int as n from (${base}) t ${where}`;
 
   return paged(
-    rows.map((r) => ({
-      id: Number(r.id),
-      name: String(r.name),
-      contact: (r.contact as string | null) ?? null,
-      phone: (r.phone as string | null) ?? null,
-      email: (r.email as string | null) ?? null,
-      country: (r.country as string | null) ?? null,
-      city: (r.city as string | null) ?? null,
-      address: (r.address as string | null) ?? null,
-      notes: (r.notes as string | null) ?? null,
-      is_active: Boolean(r.is_active),
-      invoice_count: num(r.invoice_count),
-      total_amount: num(r.total_amount),
-      balance: num(r.balance),
-    })),
+    rows.map((r) => {
+      const walletRaw = (r.wallet_balances as unknown as { currency: string; balance: unknown }[]) ?? [];
+      return {
+        id: Number(r.id),
+        name: String(r.name),
+        contact: (r.contact as string | null) ?? null,
+        phone: (r.phone as string | null) ?? null,
+        email: (r.email as string | null) ?? null,
+        country: (r.country as string | null) ?? null,
+        city: (r.city as string | null) ?? null,
+        address: (r.address as string | null) ?? null,
+        notes: (r.notes as string | null) ?? null,
+        is_active: Boolean(r.is_active),
+        invoice_count: num(r.invoice_count),
+        total_amount: num(r.total_amount),
+        balance: num(r.balance),
+        wallet_balances: walletRaw.map((w) => ({ currency: String(w.currency), balance: num(w.balance) })),
+      };
+    }),
     Number(n),
     p
   );
+}
+
+/** موجودی فعلی کیف‌پول یک تأمین‌کننده برای یک ارز مشخص */
+export async function getSupplierWalletBalance(supplierId: number, currency: string): Promise<number> {
+  const [row] = await sql`
+    select coalesce(sum(amount), 0) as balance from supplier_credits
+    where supplier_id = ${supplierId} and currency = ${currency}
+  `;
+  return num(row.balance);
 }

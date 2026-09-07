@@ -241,7 +241,8 @@ export function NewPaymentForm({
             )}
           </Card>
 
-          <Card className="grid gap-4 p-4 sm:grid-cols-2">
+          {/* دیوی معمولی به‌جای Card: Card به‌خاطر overflow-hidden، تقویم بازشوی DateInput را می‌بُرد */}
+          <div className="grid gap-4 rounded-[var(--geist-radius-lg)] border border-[var(--geist-border)] bg-[var(--geist-background)] p-4 sm:grid-cols-2">
             <DateInput name="payment_date" label="تاریخ پرداخت" />
             <SelectField name="method" label="روش پرداخت" defaultValue={PAY_METHODS[0]} options={PAY_METHODS} />
             <Input name="reference" label="مرجع/رسید" />
@@ -258,7 +259,7 @@ export function NewPaymentForm({
                 <Button>انصراف</Button>
               </Link>
             </div>
-          </Card>
+          </div>
         </ActionForm>
       )}
     </div>

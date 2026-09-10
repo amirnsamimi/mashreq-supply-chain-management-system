@@ -69,10 +69,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className="flex min-h-screen flex-col">
+        {/* هر دو sticky top-0 هستند؛ باید همین اول body باشند وگرنه هیچ‌وقت واقعاً به بالای صفحه نمی‌چسبند */}
         <OfflineBanner />
+        <ServiceWorkerRegistrar />
         <div className="flex-1">{children}</div>
         <Footer />
-        <ServiceWorkerRegistrar />
         {/* راهنمای گام‌به‌گام؛ بیرون از صفحه‌ها تا با تغییر مسیر بسته نشود */}
         <Suspense fallback={null}>
           <GuideMount />

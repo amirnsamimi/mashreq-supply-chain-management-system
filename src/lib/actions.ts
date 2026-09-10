@@ -492,36 +492,27 @@ export async function deleteItem(fd: FormData) {
 /* ================= پرداخت ================= */
 
 /**
- * یک پرداخت می‌تواند بین چند فاکتور همان تأمین‌کننده تقسیم شود.
- * هر ردیف یا از محل «نقد» (پول تازه) است یا از محل «اعتبار» کیف‌پول همان تأمین‌کننده.
- * اگر مبلغ واردشده برای یک فاکتور از مانده‌اش بیشتر باشد، مازاد (فقط وقتی منبع نقد است)
- * به‌صورت خودکار به کیف‌پول تأمین‌کننده واریز می‌شود — روی خود فاکتور منفی نمی‌ماند.
+ * تخصیص اعتبار کیف‌پول به فاکتورها. پول تازه‌ای اینجا جابه‌جا نمی‌شود — تنها راه ورود پول
+ * واقعی به سیستم «شارژ کیف‌پول» است؛ این عملیات فقط همان اعتبارِ از قبل موجود را روی
+ * یک یا چند فاکتور همان تأمین‌کننده مصرف می‌کند.
  */
-type PaymentAllocationInput = { invoice_id: number; amount: number; source: "cash" | "credit" };
+type PaymentAllocationInput = { invoice_id: number; amount: number };
 
 function parseAllocations(fd: FormData): PaymentAllocationInput[] {
   const invoiceIds = fd.getAll("invoice_id").map((v) => Number(v));
   const amounts = fd.getAll("amount").map((v) => parseFloat(String(v).replace(/,/g, "")));
-  const sources = fd.getAll("source").map((v) => String(v));
   return invoiceIds
-    .map((invoice_id, idx) => ({
-      invoice_id,
-      amount: amounts[idx],
-      source: sources[idx] === "credit" ? ("credit" as const) : ("cash" as const),
-    }))
+    .map((invoice_id, idx) => ({ invoice_id, amount: amounts[idx] }))
     .filter((a) => Number.isInteger(a.invoice_id) && a.invoice_id > 0 && Number.isFinite(a.amount) && a.amount > 0);
 }
 
 export async function createPayment(_prev: FormResult, fd: FormData): Promise<FormResult> {
   const me = await requireAuth();
-  const supplierIdRaw = s(fd, "supplier_id");
-  const supplierId = supplierIdRaw ? Number(supplierIdRaw) : null;
+  const supplierId = Number(s(fd, "supplier_id"));
+  if (!supplierId) return err("تأمین‌کننده را انتخاب کنید");
 
   const allocations = parseAllocations(fd);
   if (allocations.length === 0) return err("حداقل یک فاکتور با مبلغ معتبر انتخاب کنید");
-  if (allocations.some((a) => a.source === "credit") && !supplierId) {
-    return err("برای استفاده از اعتبار کیف‌پول باید تأمین‌کننده مشخص باشد");
-  }
 
   const invoiceById = new Map<number, { id: number; invoice_no: string; balance: number }>();
   let currency: string | null = null;
@@ -533,7 +524,7 @@ export async function createPayment(_prev: FormResult, fd: FormData): Promise<Fo
       from invoices i where i.id = ${a.invoice_id}
     `;
     if (!inv) return err("یکی از فاکتورها پیدا نشد");
-    if (supplierId && Number(inv.supplier_id) !== supplierId) {
+    if (Number(inv.supplier_id) !== supplierId) {
       return err(`فاکتور ${inv.invoice_no} متعلق به این تأمین‌کننده نیست`);
     }
     if (currency === null) currency = inv.currency as string | null;
@@ -543,64 +534,39 @@ export async function createPayment(_prev: FormResult, fd: FormData): Promise<Fo
     const balance = Math.max(0, Number(inv.total_amount) - Number(inv.paid));
     invoiceById.set(a.invoice_id, { id: Number(inv.id), invoice_no: String(inv.invoice_no), balance });
   }
+  if (!currency) return err("ارز فاکتورها مشخص نیست");
 
-  let walletBalance = 0;
-  if (supplierId && currency) walletBalance = await getSupplierWalletBalance(supplierId, currency);
-  const creditRequested = allocations.filter((a) => a.source === "credit").reduce((s2, a) => s2 + a.amount, 0);
+  const walletBalance = await getSupplierWalletBalance(supplierId, currency);
+  const creditRequested = allocations.reduce((s2, a) => s2 + a.amount, 0);
   if (creditRequested > walletBalance + 0.005) {
-    return err(`اعتبار کافی در کیف‌پول این تأمین‌کننده (${currency ?? ""}) نیست. اعتبار موجود: ${money(walletBalance)}`);
+    return err(`اعتبار کافی در کیف‌پول این تأمین‌کننده (${currency}) نیست. اعتبار موجود: ${money(walletBalance)}`);
   }
 
-  // برای هر فاکتور، ابتدا اعتبار و سپس نقد را روی مانده اعمال می‌کنیم؛ مازاد نقد به کیف‌پول واریز می‌شود
+  // روی هیچ فاکتوری بیشتر از مانده‌اش اعمال نمی‌شود؛ چیزی که اضافه بیاید، هدر نمی‌رود، فقط مصرف نمی‌شود
   const invoiceApplied = new Map<number, number>();
-  /** مازاد نقد هر فاکتور جدا نگه داشته می‌شود تا در کیف‌پول به همان فاکتور نسبت داده شود */
-  const invoiceDeposit = new Map<number, number>();
   let creditConsumed = 0;
-  let netCash = 0;
   for (const [invoiceId, inv] of invoiceById) {
-    let remaining = inv.balance;
-    const rows = allocations.filter((a) => a.invoice_id === invoiceId);
-
-    const creditAmount = rows.filter((a) => a.source === "credit").reduce((s2, a) => s2 + a.amount, 0);
-    const creditApplied = Math.min(creditAmount, remaining);
-    remaining -= creditApplied;
-    creditConsumed += creditApplied;
-
-    const cashAmount = rows.filter((a) => a.source === "cash").reduce((s2, a) => s2 + a.amount, 0);
-    const cashApplied = Math.min(cashAmount, remaining);
-    const overflow = cashAmount - cashApplied; // مازاد نقد نسبت به مانده همین فاکتور
-    if (overflow > 0.005) invoiceDeposit.set(invoiceId, overflow);
-    netCash += cashAmount;
-
-    const applied = creditApplied + cashApplied;
+    const requested = allocations.filter((a) => a.invoice_id === invoiceId).reduce((s2, a) => s2 + a.amount, 0);
+    const applied = Math.min(requested, inv.balance);
+    creditConsumed += applied;
     if (applied > 0.005) invoiceApplied.set(invoiceId, applied);
   }
+  if (invoiceApplied.size === 0) return err("هیچ مبلغی روی فاکتورها اعمال نشد");
 
   const paymentId = await sql.begin(async (tx) => {
     const [row] = await tx`
-      insert into payments (supplier_id, payment_date, amount, method, reference, notes)
-      values (${supplierId}, ${s(fd, "payment_date")}, ${netCash},
-              ${s(fd, "method")}, ${s(fd, "reference")}, ${s(fd, "notes")})
+      insert into payments (supplier_id, payment_date, amount, method, reference, notes, kind)
+      values (${supplierId}, ${s(fd, "payment_date")}, 0,
+              ${"اعتبار کیف‌پول"}, ${s(fd, "reference")}, ${s(fd, "notes")}, ${"allocation"})
       returning id
     `;
     for (const [invoiceId, applied] of invoiceApplied) {
       await tx`insert into payment_allocations (payment_id, invoice_id, amount) values (${row.id}, ${invoiceId}, ${applied})`;
     }
-    if (supplierId && currency) {
-      for (const [invoiceId, overflow] of invoiceDeposit) {
-        const invoiceNo = invoiceById.get(invoiceId)?.invoice_no ?? "";
-        await tx`
-          insert into supplier_credits (supplier_id, currency, amount, payment_id, invoice_id, notes)
-          values (${supplierId}, ${currency}, ${overflow}, ${row.id}, ${invoiceId}, ${"اضافه‌پرداخت فاکتور " + invoiceNo})
-        `;
-      }
-    }
-    if (supplierId && currency && creditConsumed > 0.005) {
-      await tx`
-        insert into supplier_credits (supplier_id, currency, amount, payment_id, notes)
-        values (${supplierId}, ${currency}, ${-creditConsumed}, ${row.id}, ${"مصرف اعتبار در این تراکنش"})
-      `;
-    }
+    await tx`
+      insert into supplier_credits (supplier_id, currency, amount, payment_id, notes)
+      values (${supplierId}, ${currency}, ${-creditConsumed}, ${row.id}, ${"مصرف اعتبار در این تراکنش"})
+    `;
     return Number(row.id);
   });
 
@@ -608,15 +574,12 @@ export async function createPayment(_prev: FormResult, fd: FormData): Promise<Fo
     .map((id) => invoiceById.get(id)?.invoice_no)
     .filter(Boolean)
     .join("، ");
-  const parts = [];
-  if (netCash > 0.005) parts.push(`${money(netCash)} نقد`);
-  if (creditConsumed > 0.005) parts.push(`${money(creditConsumed)} از اعتبار`);
-  await logAudit(me, "ایجاد", "payment", paymentId, `${parts.join(" + ")} برای فاکتور ${invoiceNos}`);
+  await logAudit(me, "ایجاد", "payment", paymentId, `${money(creditConsumed)} از اعتبار برای فاکتور ${invoiceNos}`);
   for (const invoiceId of invoiceApplied.keys()) revalidatePath(`/invoices/${invoiceId}`);
   revalidatePath("/payments");
   revalidatePath("/suppliers");
   revalidatePath("/");
-  return ok("پرداخت ثبت شد");
+  return ok("فاکتور(ها) از محل اعتبار کیف‌پول تسویه شد");
 }
 
 /**
@@ -638,9 +601,9 @@ export async function chargeWallet(_prev: FormResult, fd: FormData): Promise<For
 
   const paymentId = await sql.begin(async (tx) => {
     const [row] = await tx`
-      insert into payments (supplier_id, payment_date, amount, method, reference, notes)
+      insert into payments (supplier_id, payment_date, amount, method, reference, notes, kind)
       values (${supplierId}, ${s(fd, "payment_date")}, ${amount},
-              ${s(fd, "method")}, ${s(fd, "reference")}, ${s(fd, "notes")})
+              ${s(fd, "method")}, ${s(fd, "reference")}, ${s(fd, "notes")}, ${"transfer"})
       returning id
     `;
     await tx`
@@ -1160,5 +1123,25 @@ export async function sendTestPushAction(): Promise<FormResult> {
   });
   return sent > 0
     ? ok(`به ${sent} دستگاه فرستاده شد`)
+    : err("دستگاهی ثبت نشده است");
+}
+
+/**
+ * بعد از دیپلوی یک نسخه جدید، این اعلان را به همه دستگاه‌های ثبت‌شده می‌فرستد —
+ * حتی کاربرانی که برنامه را نبسته‌اند هم با زدنش، صفحه تازه می‌شود و نسخه جدید می‌آید.
+ * فقط ادمین/صاحب کسب‌وکار اجازه دارد (وگرنه هر کاربری می‌توانست کل تیم را اسپم کند).
+ */
+export async function sendUpdateNotificationAction(): Promise<FormResult> {
+  const me = await requireAuth();
+  if (!canManageUsers(me.role)) return err("فقط ادمین و صاحب کسب‌وکار می‌توانند این اعلان را بفرستند");
+  if (!pushEnabled()) return err("کلیدهای VAPID در محیط تعریف نشده‌اند");
+  const { sent } = await sendToAll({
+    title: "نسخه جدید در دسترس است",
+    body: "برای دریافت آخرین تغییرات، لمس کنید تا برنامه تازه شود.",
+    url: "/",
+    tag: "khanum-update",
+  });
+  return sent > 0
+    ? ok(`اعلان به‌روزرسانی به ${sent} دستگاه فرستاده شد`)
     : err("دستگاهی ثبت نشده است");
 }

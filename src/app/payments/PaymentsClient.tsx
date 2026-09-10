@@ -85,18 +85,21 @@ export function PaymentsClient({ page }: { page: Paged<PaymentRow> }) {
   ];
 
   return (
-    <Card>
+    <Card
+      title="تخصیص به فاکتورها"
+      footer="این جدول یعنی کدام فاکتور از اعتبار کیف‌پول تسویه شده — پول واقعی که به هر تأمین‌کننده منتقل شده را در «انتقال‌ها» ببینید."
+    >
       <DataTable
         rows={payments}
         columns={columns}
         server={page}
         searchPlaceholder="جست‌وجو در فاکتور، فروشنده، روش یا مرجع…"
-        emptyTitle="هنوز پرداختی ثبت نشده است"
-        emptyHint="با دکمه «ثبت پرداخت» شروع کنید"
+        emptyTitle="هنوز فاکتوری از اعتبار تسویه نشده است"
+        emptyHint="با دکمه «تسویه از اعتبار» شروع کنید"
         emptyAction={
           <Link href="/payments/new">
             <Button variant="primary" size="small">
-              ثبت پرداخت
+              تسویه از اعتبار
             </Button>
           </Link>
         }
@@ -113,7 +116,7 @@ export function PaymentsClient({ page }: { page: Paged<PaymentRow> }) {
 export function NewPaymentTrigger() {
   return (
     <Link href="/payments/new">
-      <Button variant="primary">+ ثبت پرداخت</Button>
+      <Button variant="primary">تسویه از اعتبار</Button>
     </Link>
   );
 }

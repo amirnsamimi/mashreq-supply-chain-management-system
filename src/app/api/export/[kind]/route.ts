@@ -4,6 +4,7 @@ import { sql } from "@/lib/db";
 import { listAudit } from "@/lib/audit";
 import { isoToJalaliString } from "@/lib/jalali";
 import {
+  listAllTransfers,
   listInvoices,
   listItems,
   listProducts,
@@ -129,6 +130,13 @@ export async function GET(
       rows.map((r) => [r.invoice_no, r.currency, jd(r.payment_date as string), r.amount, r.method, r.reference, r.notes])
     );
     filename = "پرداخت-ها";
+  } else if (kind === "transfers") {
+    const rows = await listAllTransfers();
+    content = csv(
+      ["تأمین‌کننده","ارز","تاریخ","مبلغ","روش","مرجع/رسید","توضیحات"],
+      rows.map((r) => [r.supplier, r.currency, jd(r.payment_date), r.amount, r.method, r.reference, r.notes])
+    );
+    filename = "انتقال-ها";
   } else if (kind === "history") {
     const rows = await listAudit(5000);
     content = csv(

@@ -9,6 +9,7 @@ import {
   markAllRead,
   markRead,
   runRulesNow,
+  sendUpdateNotificationAction,
 } from "@/lib/actions";
 import { Badge, Button, Card, Empty, Note } from "@/components/geist";
 import type { BadgeTone } from "@/components/geist/Feedback";
@@ -53,6 +54,29 @@ export function RunNowButton() {
         }
       >
         بررسی الان
+      </Button>
+    </span>
+  );
+}
+
+/** فقط ادمین/صاحب کسب‌وکار می‌بیندش — بعد از دیپلوی یک نسخه جدید بزنید تا کاربران با تلفن هم خبردار شوند */
+export function SendUpdateButton() {
+  const [pending, start] = useTransition();
+  const [msg, setMsg] = useState<string | null>(null);
+
+  return (
+    <span className="flex items-center gap-2">
+      {msg && <span className="text-xs text-[var(--geist-secondary)]">{msg}</span>}
+      <Button
+        loading={pending}
+        onClick={() =>
+          start(async () => {
+            const r = await sendUpdateNotificationAction();
+            setMsg(r?.ok ?? r?.error ?? null);
+          })
+        }
+      >
+        اعلام نسخه جدید به کاربران
       </Button>
     </span>
   );

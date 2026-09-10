@@ -1,14 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-/* ---------- ثبت سرویس‌ورکر ---------- */
+/* ---------- ثبت سرویس‌ورکر و اطلاع‌رسانی نسخه جدید ---------- */
 
 /**
- * سرویس‌ورکر را ثبت می‌کند و اگر نسخه تازه‌ای آماده شد، پس از فعال‌شدنش
- * صفحه را یک‌بار نو می‌کند تا کاربر روی نسخه قدیمی نماند.
+ * سرویس‌ورکر را ثبت می‌کند. به‌جای نوکردن خودکار و بی‌خبر صفحه (که می‌توانست
+ * وسط پرکردن یک فرم مزاحم کاربر شود)، وقتی نسخه تازه‌ای — چه در خود
+ * سرویس‌ورکر، چه در کل برنامه — آماده باشد، یک نوار نشان می‌دهد تا خود کاربر
+ * تصمیم بگیرد کِی به‌روزرسانی کند.
  */
 export function ServiceWorkerRegistrar() {
+  const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null);
+  const [buildStale, setBuildStale] = useState(false);
+  const reloadingRef = useRef(false);
+
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
 
@@ -26,10 +32,9 @@ export function ServiceWorkerRegistrar() {
       return;
     }
 
-    let reloading = false;
     const onControllerChange = () => {
-      if (reloading) return;
-      reloading = true;
+      if (reloadingRef.current) return;
+      reloadingRef.current = true;
       window.location.reload();
     };
 
@@ -38,15 +43,15 @@ export function ServiceWorkerRegistrar() {
     navigator.serviceWorker
       .register("/sw.js", { scope: "/", updateViaCache: "none" })
       .then((reg) => {
-        // اگر نسخه‌ای در حال انتظار است، همین حالا جایش را بگیرد
-        if (reg.waiting) reg.waiting.postMessage("skip-waiting");
+        // اگر نسخه‌ای از قبل در حال انتظار است، همان لحظه به کاربر خبر بده
+        if (reg.waiting && navigator.serviceWorker.controller) setWaitingWorker(reg.waiting);
         reg.addEventListener("updatefound", () => {
           const next = reg.installing;
           if (!next) return;
           next.addEventListener("statechange", () => {
-            // فقط وقتی نسخه قبلی وجود داشته، یعنی این یک به‌روزرسانی است
+            // فقط وقتی نسخه قبلی وجود داشته، یعنی این یک به‌روزرسانی است نه اولین نصب
             if (next.state === "installed" && navigator.serviceWorker.controller) {
-              next.postMessage("skip-waiting");
+              setWaitingWorker(next);
             }
           });
         });
@@ -57,7 +62,64 @@ export function ServiceWorkerRegistrar() {
       navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
   }, []);
 
-  return null;
+  // نسخه واقعاً دیپلوی‌شده روی سرور را دوره‌ای بررسی می‌کند — مستقل از سرویس‌ورکر،
+  // چون تغییر کد برنامه لزوماً فایل sw.js را عوض نمی‌کند تا آن مکانیزم فعال شود.
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "production") return;
+    const myBuild = process.env.NEXT_PUBLIC_APP_BUILD;
+    if (!myBuild) return;
+
+    let cancelled = false;
+    async function check() {
+      try {
+        const res = await fetch("/api/version", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = (await res.json()) as { build?: string };
+        if (!cancelled && data.build && data.build !== myBuild) setBuildStale(true);
+      } catch {
+        // بی‌اهمیت؛ همین یک بار بررسی را رد می‌کنیم، دفعه بعد دوباره تلاش می‌شود
+      }
+    }
+    check();
+    const interval = setInterval(check, 5 * 60 * 1000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") check();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
+
+  function applyUpdate() {
+    if (waitingWorker) {
+      waitingWorker.postMessage("skip-waiting");
+      // اگر به هر دلیل controllerchange شلیک نشد (مثلاً چند تب باز بود)، خودمان تازه می‌کنیم
+      setTimeout(() => window.location.reload(), 1500);
+    } else {
+      window.location.reload();
+    }
+  }
+
+  if (!waitingWorker && !buildStale) return null;
+
+  return (
+    <div
+      role="status"
+      className="sticky top-0 z-50 flex items-center justify-center gap-3 bg-[var(--geist-blue-lighter)] px-4 py-1.5 text-center text-xs text-[var(--geist-blue-text)]"
+    >
+      <span>نسخه جدید برنامه در دسترس است.</span>
+      <button
+        type="button"
+        onClick={applyUpdate}
+        className="rounded-[var(--geist-radius)] border border-current px-2 py-0.5 font-medium transition hover:opacity-80"
+      >
+        به‌روزرسانی
+      </button>
+    </div>
+  );
 }
 
 /* ---------- نوار وضعیت آفلاین ---------- */

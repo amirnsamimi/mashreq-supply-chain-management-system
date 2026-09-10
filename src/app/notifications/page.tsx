@@ -2,10 +2,11 @@ import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { listNotifications, listRules, lastRun } from "@/lib/notifications";
 import { pushEnabled } from "@/lib/push";
+import { canManageUsers } from "@/lib/permissions";
 import { Page } from "@/components/Nav";
 import { Button, Card, Note } from "@/components/geist";
 import { PushToggle } from "@/components/PWA";
-import { NotificationList, RunNowButton } from "./NotificationsClient";
+import { NotificationList, RunNowButton, SendUpdateButton } from "./NotificationsClient";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +43,14 @@ export default async function NotificationsPage() {
             enabled={canPush}
           />
         </div>
+        {canManageUsers(me.role) && (
+          <div className="flex items-center justify-between gap-3 border-t border-[var(--geist-border)] p-4">
+            <span className="text-xs text-[var(--geist-secondary)]">
+              بعد از دیپلوی یک نسخه جدید بزنید تا کسانی که برنامه را نبسته‌اند هم خبردار شوند.
+            </span>
+            <SendUpdateButton />
+          </div>
+        )}
       </Card>
 
       <div className="h-4" />

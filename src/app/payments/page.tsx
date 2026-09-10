@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
-import { PAYMENT_SORTS, listInvoices, listPaymentsPaged } from "@/lib/queries";
+import { PAYMENT_SORTS, listAllTransfers, listInvoices, listPaymentsPaged } from "@/lib/queries";
 import { parseParams } from "@/lib/paging";
 import { money } from "@/lib/format";
 import { Page } from "@/components/Nav";
 import { Button, Stat } from "@/components/geist";
 import { NewPaymentTrigger, PaymentsClient } from "./PaymentsClient";
+import { TransfersClient } from "./TransfersClient";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,7 @@ export default async function PaymentsPage({
   const me = await requirePermission("payments");
   const params = parseParams(await searchParams, PAYMENT_SORTS, "payment_date");
   const payments = await listPaymentsPaged(params);
+  const transfers = await listAllTransfers();
   const invoices = await listInvoices();
 
   // جمع‌ها به تفکیک ارز، چون جمع کردن ارزهای مختلف بی‌معناست
@@ -46,7 +48,7 @@ export default async function PaymentsPage({
       }
     >
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="تعداد پرداخت‌ها" value={payments.total} />
+        <Stat label="تعداد انتقال به تأمین‌کنندگان" value={transfers.length} />
         <Stat
           label="فاکتورهای سررسید گذشته"
           value={overdue.length}
@@ -62,6 +64,10 @@ export default async function PaymentsPage({
             hint={`پرداخت‌شده: ${money(v.paid)}`}
           />
         ))}
+      </div>
+
+      <div className="mt-6">
+        <TransfersClient transfers={transfers} />
       </div>
 
       <div className="mt-6">

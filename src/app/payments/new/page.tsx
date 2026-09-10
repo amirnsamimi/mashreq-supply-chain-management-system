@@ -23,7 +23,7 @@ export default async function NewPaymentPage({
   return (
     <Page
       active="/payments"
-      title="ثبت پرداخت"
+      title="تسویه از اعتبار کیف‌پول"
       user={`${me.first_name} ${me.last_name}`}
       permissions={me.permissions}
       action={

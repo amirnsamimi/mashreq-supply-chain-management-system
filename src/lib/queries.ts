@@ -456,6 +456,51 @@ function shapePayment(r: Record<string, unknown>): PaymentRow {
   };
 }
 
+/* ---------- انتقال‌ها به تأمین‌کنندگان (پول واقعی؛ نه تخصیص به فاکتور) ---------- */
+
+/**
+ * هر ردیف یک انتقال واقعی پول به یک تأمین‌کننده است (فقط از راه «شارژ کیف‌پول»).
+ * برخلاف PaymentRow، اینجا هیچ فاکتوری درگیر نیست — این همان چیزی است که با صورت‌حساب بانک تطبیق می‌خورد.
+ */
+export type TransferRow = {
+  id: number;
+  supplier_id: number;
+  supplier: string;
+  currency: string | null;
+  payment_date: string | null;
+  amount: number;
+  method: string | null;
+  reference: string | null;
+  notes: string | null;
+};
+
+function shapeTransfer(r: Record<string, unknown>): TransferRow {
+  return {
+    id: Number(r.id),
+    supplier_id: Number(r.supplier_id),
+    supplier: String(r.supplier),
+    currency: (r.currency as string | null) ?? null,
+    payment_date: d(r.payment_date),
+    amount: num(r.amount),
+    method: (r.method as string | null) ?? null,
+    reference: (r.reference as string | null) ?? null,
+    notes: (r.notes as string | null) ?? null,
+  };
+}
+
+export async function listAllTransfers(): Promise<TransferRow[]> {
+  const rows = await sql`
+    select pay.id, pay.supplier_id, s.name as supplier, pay.payment_date, pay.amount,
+      pay.method, pay.reference, pay.notes,
+      (select sc.currency from supplier_credits sc where sc.payment_id = pay.id limit 1) as currency
+    from payments pay
+    join suppliers s on s.id = pay.supplier_id
+    where pay.kind = 'transfer'
+    order by pay.payment_date desc nulls last, pay.id desc
+  `;
+  return rows.map(shapeTransfer);
+}
+
 const paymentAllocationSelect = () => sql`
   select pa.id, pa.amount, pa.invoice_id, pay.id as payment_id,
     pay.payment_date, pay.method, pay.reference, pay.notes,

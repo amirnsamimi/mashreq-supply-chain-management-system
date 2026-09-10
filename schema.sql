@@ -129,6 +129,11 @@ where supplier_id is null;
 alter table payments add column if not exists supplier_id integer references suppliers(id) on delete set null;
 alter table payments alter column invoice_id drop not null;
 
+-- نوع ردیف: transfer=پول واقعی که به تأمین‌کننده رفت (فقط از راه شارژ کیف‌پول)،
+-- allocation=مصرف اعتباری که از قبل در کیف‌پول بود روی فاکتور (پول تازه‌ای جابه‌جا نمی‌شود)،
+-- legacy=داده قدیمیِ قبل از این تفکیک که پرداخت مستقیم روی یک فاکتور بود.
+alter table payments add column if not exists kind text not null default 'legacy';
+
 create table if not exists payment_allocations (
   id         serial primary key,
   payment_id integer not null references payments(id) on delete cascade,

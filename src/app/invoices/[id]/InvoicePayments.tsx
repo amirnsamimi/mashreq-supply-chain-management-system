@@ -39,7 +39,7 @@ export function InvoicePaymentsCard({
       action={
         <Link href={newPaymentHref}>
           <Button size="tiny" variant="primary">
-            ثبت پرداخت
+            تسویه از اعتبار
           </Button>
         </Link>
       }
@@ -47,7 +47,7 @@ export function InvoicePaymentsCard({
     >
       {payments.length === 0 ? (
         <Empty title="پرداختی ثبت نشده است">
-          با دکمه «ثبت پرداخت» می‌توانید برای این فاکتور پرداخت ثبت کنید
+          با دکمه «تسویه از اعتبار» می‌توانید این فاکتور را از اعتبار کیف‌پول تأمین‌کننده تسویه کنید
         </Empty>
       ) : (
         <div className="scroll-x">

@@ -5,6 +5,12 @@ const nextConfig: NextConfig = {
   // خروجی سرور روی Vercel شکننده است، پس بیرون از باندل نگهش می‌داریم.
   serverExternalPackages: ["web-push"],
 
+  // شناسه همین بیلد؛ کلاینت آن را با /api/version (که همیشه تازه اجرا می‌شود)
+  // مقایسه می‌کند تا بفهمد نسخه جدیدی روی سرور دیپلوی شده یا نه.
+  env: {
+    NEXT_PUBLIC_APP_BUILD: process.env.VERCEL_GIT_COMMIT_SHA ?? String(Date.now()),
+  },
+
   async headers() {
     return [
       {

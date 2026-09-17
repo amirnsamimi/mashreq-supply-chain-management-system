@@ -8,6 +8,7 @@ import { deletePayment } from "@/lib/actions";
 import { Button, Card, DataTable } from "@/components/geist";
 import type { Column } from "@/components/geist/DataTable";
 import { DateText } from "@/components/DateText";
+import { EditAllocationButton } from "./EditPaymentModals";
 
 export function PaymentsClient({ page }: { page: Paged<PaymentRow> }) {
   const payments = page.rows;
@@ -64,6 +65,8 @@ export function PaymentsClient({ page }: { page: Paged<PaymentRow> }) {
       header: "",
       sortable: false,
       render: (r) => (
+        <div className="flex items-center justify-end gap-1">
+          <EditAllocationButton row={r} />
         <form action={deletePayment}>
           <input type="hidden" name="id" value={r.payment_id} />
           <Button
@@ -80,6 +83,7 @@ export function PaymentsClient({ page }: { page: Paged<PaymentRow> }) {
             حذف
           </Button>
         </form>
+        </div>
       ),
     },
   ];

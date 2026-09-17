@@ -437,7 +437,13 @@ export type PaymentRow = {
   notes: string | null;
   /** این پرداخت چند فاکتور را پوشش می‌دهد؛ برای هشدار هنگام حذف */
   invoice_count: number;
+  supplier_id: number | null;
+  kind: PaymentKind;
+  /** پول واقعی کل این پرداخت (برای تسویه از اعتبار صفر است) */
+  payment_amount: number;
 };
+
+export type PaymentKind = "transfer" | "allocation" | "legacy";
 
 function shapePayment(r: Record<string, unknown>): PaymentRow {
   return {
@@ -453,6 +459,9 @@ function shapePayment(r: Record<string, unknown>): PaymentRow {
     reference: (r.reference as string | null) ?? null,
     notes: (r.notes as string | null) ?? null,
     invoice_count: num(r.invoice_count),
+    supplier_id: r.supplier_id === null || r.supplier_id === undefined ? null : Number(r.supplier_id),
+    kind: String(r.kind) as PaymentKind,
+    payment_amount: num(r.payment_amount),
   };
 }
 
@@ -472,6 +481,8 @@ export type TransferRow = {
   method: string | null;
   reference: string | null;
   notes: string | null;
+  /** اعتباری از این شارژ که هنوز مصرف نشده؛ مبلغ شارژ را نمی‌شود کمتر از (مبلغ − این مقدار) کرد */
+  wallet_balance: number;
 };
 
 function shapeTransfer(r: Record<string, unknown>): TransferRow {
@@ -485,6 +496,7 @@ function shapeTransfer(r: Record<string, unknown>): TransferRow {
     method: (r.method as string | null) ?? null,
     reference: (r.reference as string | null) ?? null,
     notes: (r.notes as string | null) ?? null,
+    wallet_balance: num(r.wallet_balance),
   };
 }
 
@@ -492,9 +504,16 @@ export async function listAllTransfers(): Promise<TransferRow[]> {
   const rows = await sql`
     select pay.id, pay.supplier_id, s.name as supplier, pay.payment_date, pay.amount,
       pay.method, pay.reference, pay.notes,
-      (select sc.currency from supplier_credits sc where sc.payment_id = pay.id limit 1) as currency
+      c.currency,
+      coalesce((
+        select sum(w.amount) from supplier_credits w
+        where w.supplier_id = pay.supplier_id and w.currency = c.currency
+      ), 0) as wallet_balance
     from payments pay
     join suppliers s on s.id = pay.supplier_id
+    left join lateral (
+      select sc.currency from supplier_credits sc where sc.payment_id = pay.id limit 1
+    ) c on true
     where pay.kind = 'transfer'
     order by pay.payment_date desc nulls last, pay.id desc
   `;
@@ -504,7 +523,7 @@ export async function listAllTransfers(): Promise<TransferRow[]> {
 const paymentAllocationSelect = () => sql`
   select pa.id, pa.amount, pa.invoice_id, pay.id as payment_id,
     pay.payment_date, pay.method, pay.reference, pay.notes,
-    i.invoice_no, i.supplier, i.currency,
+    i.invoice_no, i.supplier, i.currency, pay.supplier_id, pay.kind, pay.amount as payment_amount,
     (select count(*)::int from payment_allocations where payment_id = pay.id) as invoice_count
   from payment_allocations pa
   join payments pay on pay.id = pa.payment_id

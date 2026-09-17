@@ -7,6 +7,7 @@ import { deletePayment } from "@/lib/actions";
 import { Button, Card, DataTable } from "@/components/geist";
 import type { Column } from "@/components/geist/DataTable";
 import { DateText } from "@/components/DateText";
+import { EditTransferButton } from "./EditPaymentModals";
 
 /** پول واقعی که به تأمین‌کنندگان منتقل شده — همان چیزی که با صورت‌حساب بانک تطبیق می‌خورد */
 export function TransfersClient({ transfers }: { transfers: TransferRow[] }) {
@@ -58,6 +59,8 @@ export function TransfersClient({ transfers }: { transfers: TransferRow[] }) {
       header: "",
       sortable: false,
       render: (r) => (
+        <div className="flex items-center justify-end gap-1">
+          <EditTransferButton row={r} />
         <form action={deletePayment}>
           <input type="hidden" name="id" value={r.id} />
           <Button
@@ -65,11 +68,12 @@ export function TransfersClient({ transfers }: { transfers: TransferRow[] }) {
             size="tiny"
             variant="tertiary"
             className="!text-[var(--geist-red-text)]"
-            confirm={`این انتقال ${money(r.amount)} ${r.currency} به ${r.supplier} حذف شود؟ اعتبار مصرف‌نشده‌اش هم از کیف‌پول کم می‌شود.`}
+            confirm={`این انتقال ${money(r.amount)} ${r.currency} به ${r.supplier} حذف شود؟ اعتبار آن از کیف‌پول کم می‌شود؛ اگر قبلاً مصرف شده باشد کیف‌پول منفی می‌شود.`}
           >
             حذف
           </Button>
         </form>
+        </div>
       ),
     },
   ];

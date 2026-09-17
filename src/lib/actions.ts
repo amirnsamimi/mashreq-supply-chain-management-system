@@ -19,6 +19,7 @@ import {
   verifyPassword,
 } from "./auth";
 import { money } from "./format";
+import { NEGATIVE_WALLET_MARK } from "./lists";
 import {
   ALL_PERMISSIONS,
   canManageUsers,
@@ -621,15 +622,233 @@ export async function chargeWallet(_prev: FormResult, fd: FormData): Promise<For
   return ok("کیف‌پول شارژ شد");
 }
 
+type Tx = Parameters<Parameters<typeof sql.begin>[1]>[0];
+
+class PaymentEditError extends Error {}
+
+/**
+ * موجودی کیف‌پول یک تأمین‌کننده را با واقعیت تطبیق می‌دهد.
+ * قاعده (به تفکیک ارز): کیف‌پول = کل پول واقعی پرداخت‌شده − آنچه فاکتورها واقعاً جذب کرده‌اند
+ * (پرداخت هر فاکتور حداکثر تا مبلغ کل آن). اگر ردیف‌های کیف‌پول با این عدد نخوانند، یک ردیف اصلاحی
+ * اضافه می‌شود — ردیف‌های قبلی بازنویسی نمی‌شوند تا سابقه بماند.
+ * موجودی نهایی هر ارز را برمی‌گرداند.
+ */
+async function reconcileWallet(tx: Tx, supplierId: number, reason: string) {
+  const rows = await tx`
+    with money as (
+      select coalesce(
+        (select sc.currency from supplier_credits sc where sc.payment_id = p.id and p.kind = 'transfer' limit 1),
+        (select coalesce(i.currency, 'RMB') from payment_allocations pa join invoices i on i.id = pa.invoice_id
+          where pa.payment_id = p.id order by pa.id limit 1),
+        (select sc.currency from supplier_credits sc where sc.payment_id = p.id limit 1),
+        'RMB') as currency,
+        p.amount
+      from payments p where p.supplier_id = ${supplierId}
+    ),
+    absorbed as (
+      select coalesce(i.currency, 'RMB') as currency,
+        least(coalesce((select sum(amount) from payment_allocations where invoice_id = i.id), 0), i.total_amount) as amount
+      from invoices i where i.supplier_id = ${supplierId}
+    ),
+    ledger as (
+      select currency, amount from supplier_credits where supplier_id = ${supplierId}
+    ),
+    currencies as (
+      select currency from money union select currency from absorbed union select currency from ledger
+    )
+    select c.currency,
+      coalesce((select sum(amount) from money m where m.currency = c.currency), 0)
+        - coalesce((select sum(amount) from absorbed a where a.currency = c.currency), 0) as expected,
+      coalesce((select sum(amount) from ledger l where l.currency = c.currency), 0) as current
+    from currencies c
+  `;
+  const balances: { currency: string; balance: number }[] = [];
+  for (const r of rows) {
+    const expected = Number(r.expected);
+    const diff = expected - Number(r.current);
+    if (Math.abs(diff) > 0.005) {
+      await tx`
+        insert into supplier_credits (supplier_id, currency, amount, notes)
+        values (${supplierId}, ${r.currency}, ${diff}, ${"اصلاح کیف‌پول: " + reason})
+      `;
+    }
+    balances.push({ currency: String(r.currency), balance: expected });
+  }
+  return balances;
+}
+
+function walletWarning(balances: { currency: string; balance: number }[]) {
+  const negative = balances.filter((b) => b.balance < -0.005);
+  if (!negative.length) return "";
+  return ` — توجه: ${NEGATIVE_WALLET_MARK} (${negative.map((b) => `${money(b.balance)} ${b.currency}`).join("، ")})، یعنی بیش از پول واقعی، فاکتور تسویه شده است.`;
+}
+
+function revalidatePayments(invoiceIds: number[] = []) {
+  for (const id of invoiceIds) revalidatePath(`/invoices/${id}`);
+  revalidatePath("/payments");
+  revalidatePath("/payments/charge");
+  revalidatePath("/suppliers");
+  revalidatePath("/invoices");
+  revalidatePath("/");
+}
+
+/** ویرایش یک شارژ کیف‌پول (پول واقعی)؛ ردیف واریز کیف‌پولش هم همراه آن عوض می‌شود */
+export async function updateTransfer(_prev: FormResult, fd: FormData): Promise<FormResult> {
+  const me = await requireAuth();
+  const id = Number(s(fd, "id"));
+  const amount = n(fd, "amount");
+  if (!id) return err("انتقال پیدا نشد");
+  if (amount === null || amount <= 0) return err("مبلغ باید بزرگ‌تر از صفر باشد؛ برای حذف از دکمه حذف استفاده کنید");
+
+  try {
+    const result = await sql.begin(async (tx) => {
+      const [pay] = await tx`
+        select p.id, p.supplier_id, p.amount, p.kind, s.name as supplier_name
+        from payments p join suppliers s on s.id = p.supplier_id
+        where p.id = ${id} for update of p
+      `;
+      if (!pay || pay.kind !== "transfer") throw new PaymentEditError("این ردیف شارژ کیف‌پول نیست");
+      const [credit] = await tx`
+        select id, currency from supplier_credits where payment_id = ${id} and amount > 0 order by id limit 1
+      `;
+      if (!credit) throw new PaymentEditError("ردیف کیف‌پول این شارژ پیدا نشد");
+
+      await tx`
+        update payments set payment_date = ${s(fd, "payment_date")}, amount = ${amount},
+          method = ${s(fd, "method")}, reference = ${s(fd, "reference")}, notes = ${s(fd, "notes")}
+        where id = ${id}
+      `;
+      await tx`update supplier_credits set amount = ${amount} where id = ${credit.id}`;
+      const balances = await reconcileWallet(tx, Number(pay.supplier_id), `ویرایش شارژ ${id}`);
+      return { oldAmount: Number(pay.amount), currency: String(credit.currency), supplier: String(pay.supplier_name), balances };
+    });
+
+    await logAudit(me, "ویرایش", "payment", id,
+      Math.abs(result.oldAmount - amount) > 0.005
+        ? `شارژ کیف‌پول ${result.supplier} از ${money(result.oldAmount)} به ${money(amount)} ${result.currency}`
+        : `شارژ کیف‌پول ${result.supplier} ${money(amount)} ${result.currency}`);
+    revalidatePayments();
+    return ok("انتقال ویرایش شد" + walletWarning(result.balances));
+  } catch (e) {
+    if (e instanceof PaymentEditError) return err(e.message);
+    throw e;
+  }
+}
+
+/**
+ * ویرایش یک ردیف «تخصیص به فاکتور».
+ *  - مبلغ برای این فاکتور: در تسویه از اعتبار بیشتر از مانده فاکتور نمی‌شود؛
+ *    در پرداخت قدیمی سقف ندارد و اضافه‌پرداخت در تطبیق به کیف‌پول می‌رود.
+ *  - پول واقعی کل پرداخت: فقط برای پرداخت‌های قدیمی (legacy) که پول و تسویه را با هم داشتند.
+ *  - تاریخ، روش، مرجع و توضیحات مال کل پرداخت‌اند.
+ * در پایان کیف‌پول تأمین‌کننده با واقعیت تطبیق داده می‌شود.
+ */
+export async function updatePaymentAllocation(_prev: FormResult, fd: FormData): Promise<FormResult> {
+  const me = await requireAuth();
+  const allocationId = Number(s(fd, "allocation_id"));
+  const amount = n(fd, "amount");
+  if (!allocationId) return err("ردیف پیدا نشد");
+  if (amount === null || amount <= 0) return err("مبلغ باید بزرگ‌تر از صفر باشد؛ برای حذف از دکمه حذف استفاده کنید");
+
+  try {
+    const result = await sql.begin(async (tx) => {
+      const [row] = await tx`
+        select pa.id, pa.amount, pa.invoice_id, p.id as payment_id, p.kind, p.method, p.amount as payment_amount,
+          coalesce(p.supplier_id, i.supplier_id) as supplier_id,
+          i.invoice_no, i.total_amount, coalesce(i.currency, 'RMB') as currency
+        from payment_allocations pa
+        join payments p on p.id = pa.payment_id
+        join invoices i on i.id = pa.invoice_id
+        where pa.id = ${allocationId}
+        for update of pa, p
+      `;
+      if (!row) throw new PaymentEditError("ردیف پیدا نشد");
+      const kind = String(row.kind);
+      if (kind === "transfer") throw new PaymentEditError("این ردیف قابل ویرایش نیست");
+
+      const oldAmount = Number(row.amount);
+      if (Math.abs(amount - oldAmount) > 0.005) {
+        // تسویه از اعتبار بیش از مانده فاکتور نمی‌شود. در پرداخت قدیمی سقفی نیست:
+        // اضافه‌پرداخت خودش در تطبیق کیف‌پول به اعتبار تأمین‌کننده تبدیل می‌شود.
+        if (kind === "allocation") {
+          const [paid] = await tx`
+            select coalesce(sum(amount), 0) as paid from payment_allocations
+            where invoice_id = ${row.invoice_id} and id <> ${allocationId}
+          `;
+          const room = Number(row.total_amount) - Number(paid.paid);
+          if (amount > room + 0.005) {
+            throw new PaymentEditError(
+              `فاکتور ${row.invoice_no} فقط ${money(Math.max(0, room))} ${row.currency} جا دارد؛ بیش از مانده فاکتور ثبت نمی‌شود.`
+            );
+          }
+        }
+        await tx`update payment_allocations set amount = ${amount} where id = ${allocationId}`;
+      }
+
+      let moneyAmount = Number(row.payment_amount);
+      if (kind === "allocation") {
+        // مصرف اعتبار این تراکنش = جمع تخصیص‌هایش
+        await tx`
+          update supplier_credits
+          set amount = -(select coalesce(sum(amount), 0) from payment_allocations where payment_id = ${row.payment_id})
+          where payment_id = ${row.payment_id} and amount <= 0
+        `;
+      } else {
+        const m = n(fd, "payment_amount");
+        if (m === null || m < 0) throw new PaymentEditError("پول واقعی پرداخت نمی‌تواند خالی یا منفی باشد");
+        moneyAmount = m;
+      }
+
+      await tx`
+        update payments set payment_date = ${s(fd, "payment_date")},
+          amount = ${moneyAmount},
+          method = ${kind === "allocation" ? row.method : s(fd, "method")},
+          reference = ${s(fd, "reference")}, notes = ${s(fd, "notes")}
+        where id = ${row.payment_id}
+      `;
+
+      const balances = row.supplier_id
+        ? await reconcileWallet(tx, Number(row.supplier_id), `ویرایش پرداخت فاکتور ${row.invoice_no}`)
+        : [];
+      return {
+        oldAmount,
+        oldMoney: Number(row.payment_amount),
+        moneyAmount,
+        kind,
+        invoiceNo: String(row.invoice_no),
+        invoiceId: Number(row.invoice_id),
+        currency: String(row.currency),
+        balances,
+      };
+    });
+
+    const changes: string[] = [];
+    if (Math.abs(result.oldAmount - amount) > 0.005) changes.push(`سهم فاکتور از ${money(result.oldAmount)} به ${money(amount)}`);
+    if (result.kind !== "allocation" && Math.abs(result.oldMoney - result.moneyAmount) > 0.005)
+      changes.push(`پول واقعی از ${money(result.oldMoney)} به ${money(result.moneyAmount)}`);
+    await logAudit(me, "ویرایش", "payment", allocationId,
+      `پرداخت فاکتور ${result.invoiceNo}${changes.length ? ": " + changes.join("، ") + " " + result.currency : ""}`);
+    revalidatePayments([result.invoiceId]);
+    return ok("پرداخت ویرایش شد" + walletWarning(result.balances));
+  } catch (e) {
+    if (e instanceof PaymentEditError) return err(e.message);
+    throw e;
+  }
+}
+
 export async function deletePayment(fd: FormData) {
   const me = await requireAuth();
   const id = Number(fd.get("id"));
-  const affected = await sql`select invoice_id from payment_allocations where payment_id = ${id}`;
-  const [row] = await sql`delete from payments where id = ${id} returning amount`;
-  if (row) await logAudit(me, "حذف", "payment", id, `پرداخت ${money(row.amount)}`);
-  for (const r of affected) revalidatePath(`/invoices/${Number(r.invoice_id)}`);
-  revalidatePath("/payments");
-  revalidatePath("/suppliers");
+  const affected = await sql.begin(async (tx) => {
+    const invoices = await tx`select invoice_id from payment_allocations where payment_id = ${id}`;
+    const [row] = await tx`delete from payments where id = ${id} returning amount, supplier_id`;
+    if (!row) return null;
+    // ردیف‌های کیف‌پولی که به این پرداخت وصل نبودند (مثل اضافه‌پرداخت خودکار) با اصلاحیه هم‌تراز می‌شوند
+    if (row.supplier_id) await reconcileWallet(tx, Number(row.supplier_id), `حذف پرداخت ${id}`);
+    return { amount: row.amount, invoiceIds: invoices.map((r) => Number(r.invoice_id)) };
+  });
+  if (affected) await logAudit(me, "حذف", "payment", id, `پرداخت ${money(affected.amount)}`);
+  revalidatePayments(affected?.invoiceIds ?? []);
 }
 
 /* ================= پارت ارسال ================= */

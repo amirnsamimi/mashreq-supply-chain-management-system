@@ -2,7 +2,7 @@ import { sql } from "./db";
 import { like, paged, type PageParams, type Paged } from "./paging";
 import type { SessionUser } from "./auth";
 
-export type AuditAction = "ایجاد" | "ویرایش" | "حذف" | "ورود داده" | "ورود" | "خروج";
+export type AuditAction = "ایجاد" | "ویرایش" | "حذف" | "ورود داده" | "ورود" | "خروج" | "پشتیبان‌گیری";
 
 export const ENTITIES = {
   invoice: "فاکتور",
@@ -17,6 +17,7 @@ export const ENTITIES = {
   import: "ورود داده",
   session: "نشست",
   share: "لینک اشتراک",
+  backup: "پشتیبان و حذف داده",
 } as const;
 
 export type EntityKey = keyof typeof ENTITIES;

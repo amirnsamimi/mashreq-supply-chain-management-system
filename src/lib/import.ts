@@ -19,7 +19,10 @@ const SHEETS = {
   items: "اقلام فاکتور",
   shipments: "پارت‌های ارسال",
   allocations: "تخصیص اقلام به ارسال",
-  payments: "پرداخت‌ها",
+  charges: "شارژ کیف‌پول",
+  settlements: "تسویه فاکتور",
+  /** قالب قدیمی: پرداخت مستقیم روی فاکتور */
+  legacyPayments: "پرداخت‌ها",
 };
 
 function normalizeHeader(v: unknown): string {
@@ -117,7 +120,7 @@ export async function importWorkbook(
   data: ArrayBuffer
 ): Promise<ImportReport> {
   const counts: Record<string, number> = {
-    "تأمین‌کننده": 0, کالا: 0, فاکتور: 0, "قلم کالا": 0, "پارت ارسال": 0, تخصیص: 0, پرداخت: 0,
+    "تأمین‌کننده": 0, کالا: 0, فاکتور: 0, "قلم کالا": 0, "پارت ارسال": 0, تخصیص: 0, "شارژ کیف‌پول": 0, "تسویه از اعتبار": 0,
   };
   const warnings: string[] = [];
 
@@ -374,40 +377,185 @@ export async function importWorkbook(
     }
   }
 
-  /* ---- پرداخت‌ها ---- */
-  const wsPay = find(SHEETS.payments);
-  if (wsPay) {
-    for (const r of sheetRows(wsPay)) {
-      const invNo = text(pick(r, "شماره فاکتور"));
-      const amount = num(pick(r, "مبلغ پرداخت", "مبلغ"));
-      if (!invNo || !amount) continue;
-      const invoiceId = invoiceIdByNo.get(invNo);
-      if (!invoiceId) {
-        warnings.push(`پرداخت فاکتور ${invNo} رد شد چون این فاکتور وجود ندارد`);
-        continue;
-      }
-      const payDate = date(pick(r, "تاریخ پرداخت"));
+  /* ---- پرداخت‌ها ----
+   * پول واقعی فقط از راه شارژ کیف‌پول وارد می‌شود و فاکتورها فقط از اعتبار موجود کیف‌پول تسویه می‌شوند؛
+   * همان قاعده‌ای که chargeWallet و createPayment در actions.ts اجرا می‌کنند.
+   */
+
+  async function walletBalance(supplierId: number, currency: string) {
+    const [r] = await sql`
+      select coalesce(sum(amount), 0) as balance from supplier_credits
+      where supplier_id = ${supplierId} and currency = ${currency}
+    `;
+    return Number(r.balance);
+  }
+
+  async function invoiceForSettlement(invNo: string) {
+    const invoiceId = invoiceIdByNo.get(invNo);
+    if (!invoiceId) return null;
+    const [inv] = await sql`
+      select i.id, i.supplier_id, coalesce(i.currency, 'RMB') as currency, i.total_amount,
+        coalesce((select sum(amount) from payment_allocations where invoice_id = i.id), 0) as paid
+      from invoices i where i.id = ${invoiceId}
+    `;
+    return inv
+      ? {
+          id: Number(inv.id),
+          supplierId: inv.supplier_id === null ? null : Number(inv.supplier_id),
+          currency: String(inv.currency),
+          balance: Math.max(0, Number(inv.total_amount) - Number(inv.paid)),
+        }
+      : null;
+  }
+
+  async function insertCharge(
+    supplierId: number, currency: string, amount: number,
+    payDate: string | null, method: string | null, reference: string | null, notes: string | null
+  ) {
+    await sql.begin(async (tx) => {
+      const [row] = await tx`
+        insert into payments (supplier_id, payment_date, amount, method, reference, notes, kind)
+        values (${supplierId}, ${payDate}, ${amount}, ${method}, ${reference}, ${notes}, ${"transfer"})
+        returning id
+      `;
+      await tx`
+        insert into supplier_credits (supplier_id, currency, amount, payment_id, notes)
+        values (${supplierId}, ${currency}, ${amount}, ${row.id}, ${"شارژ کیف‌پول (ورود از اکسل)"})
+      `;
+    });
+    counts["شارژ کیف‌پول"]++;
+  }
+
+  async function insertSettlement(
+    supplierId: number, currency: string, invoiceId: number, applied: number,
+    payDate: string | null, reference: string | null, notes: string | null
+  ) {
+    await sql.begin(async (tx) => {
+      const [row] = await tx`
+        insert into payments (supplier_id, payment_date, amount, method, reference, notes, kind)
+        values (${supplierId}, ${payDate}, 0, ${"اعتبار کیف‌پول"}, ${reference}, ${notes}, ${"allocation"})
+        returning id
+      `;
+      await tx`insert into payment_allocations (payment_id, invoice_id, amount) values (${row.id}, ${invoiceId}, ${applied})`;
+      await tx`
+        insert into supplier_credits (supplier_id, currency, amount, payment_id, notes)
+        values (${supplierId}, ${currency}, ${-applied}, ${row.id}, ${"مصرف اعتبار در این تراکنش"})
+      `;
+    });
+    counts["تسویه از اعتبار"]++;
+  }
+
+  const wsCharges = find(SHEETS.charges);
+  if (wsCharges) {
+    for (const r of sheetRows(wsCharges)) {
+      const supplierName = text(pick(r, "نام تأمین‌کننده", "تأمین‌کننده", "فروشنده"));
+      const amount = num(pick(r, "مبلغ", "مبلغ پرداخت"));
+      if (!supplierName || !amount || amount <= 0) continue;
+      const currency = text(pick(r, "ارز")) ?? "RMB";
+      const payDate = date(pick(r, "تاریخ", "تاریخ پرداخت"));
       const reference = text(pick(r, "مرجع/رسید"));
-      const dupPay = await sql`
-        select p.id from payments p
-        join payment_allocations pa on pa.payment_id = p.id
-        where pa.invoice_id = ${invoiceId} and p.amount = ${amount}
+      const supplierId = await ensureSupplier(supplierName);
+      const dup = await sql`
+        select 1 from payments p
+        join supplier_credits sc on sc.payment_id = p.id
+        where p.kind = 'transfer' and p.supplier_id = ${supplierId} and p.amount = ${amount}
+          and sc.currency = ${currency}
           and p.payment_date is not distinct from ${payDate}
           and p.reference is not distinct from ${reference}
       `;
-      if (dupPay.length) {
+      if (dup.length) {
+        warnings.push(`شارژ ${amount} ${currency} برای ${supplierName} از قبل ثبت شده بود و دوباره اضافه نشد`);
+        continue;
+      }
+      await insertCharge(supplierId, currency, amount, payDate,
+        text(pick(r, "روش پرداخت", "روش")), reference, text(pick(r, "توضیحات")));
+    }
+  }
+
+  const wsSettle = find(SHEETS.settlements);
+  if (wsSettle) {
+    for (const r of sheetRows(wsSettle)) {
+      const invNo = text(pick(r, "شماره فاکتور"));
+      const requested = num(pick(r, "مبلغ از اعتبار", "مبلغ"));
+      if (!invNo || !requested || requested <= 0) continue;
+      const inv = await invoiceForSettlement(invNo);
+      if (!inv) {
+        warnings.push(`تسویه فاکتور ${invNo} رد شد چون این فاکتور وجود ندارد`);
+        continue;
+      }
+      if (!inv.supplierId) {
+        warnings.push(`تسویه فاکتور ${invNo} رد شد چون فاکتور فروشنده ندارد`);
+        continue;
+      }
+      const payDate = date(pick(r, "تاریخ", "تاریخ پرداخت"));
+      const reference = text(pick(r, "مرجع/رسید"));
+      const dup = await sql`
+        select 1 from payments p
+        join payment_allocations pa on pa.payment_id = p.id
+        where p.kind = 'allocation' and pa.invoice_id = ${inv.id}
+          and p.payment_date is not distinct from ${payDate}
+          and p.reference is not distinct from ${reference}
+      `;
+      if (dup.length) {
+        warnings.push(`تسویه فاکتور ${invNo} در این تاریخ از قبل ثبت شده بود و دوباره اضافه نشد`);
+        continue;
+      }
+      const wallet = await walletBalance(inv.supplierId, inv.currency);
+      const applied = Math.min(requested, inv.balance, wallet);
+      if (applied <= 0.005) {
+        warnings.push(
+          inv.balance <= 0.005
+            ? `تسویه فاکتور ${invNo} رد شد چون مانده‌ای ندارد`
+            : `تسویه فاکتور ${invNo} رد شد چون کیف‌پول ${inv.currency} این تأمین‌کننده اعتبار ندارد`
+        );
+        continue;
+      }
+      if (applied < requested - 0.005) {
+        warnings.push(`از ${requested} درخواستی برای فاکتور ${invNo} فقط ${applied} اعمال شد (سقف مانده فاکتور یا اعتبار کیف‌پول)`);
+      }
+      await insertSettlement(inv.supplierId, inv.currency, inv.id, applied, payDate, reference, text(pick(r, "توضیحات")));
+    }
+  }
+
+  /* قالب قدیمی «پرداخت‌ها»: هر ردیف = شارژ کیف‌پول + بلافاصله تسویه همان فاکتور؛ اضافه‌پرداخت در کیف‌پول می‌ماند */
+  const wsLegacy = find(SHEETS.legacyPayments);
+  if (wsLegacy) {
+    for (const r of sheetRows(wsLegacy)) {
+      const invNo = text(pick(r, "شماره فاکتور"));
+      const amount = num(pick(r, "مبلغ پرداخت", "مبلغ"));
+      if (!invNo || !amount || amount <= 0) continue;
+      const inv = await invoiceForSettlement(invNo);
+      if (!inv) {
+        warnings.push(`پرداخت فاکتور ${invNo} رد شد چون این فاکتور وجود ندارد`);
+        continue;
+      }
+      if (!inv.supplierId) {
+        warnings.push(`پرداخت فاکتور ${invNo} رد شد چون فاکتور فروشنده ندارد؛ پرداخت فقط به کیف‌پول تأمین‌کننده واریز می‌شود`);
+        continue;
+      }
+      const payDate = date(pick(r, "تاریخ پرداخت", "تاریخ"));
+      const reference = text(pick(r, "مرجع/رسید"));
+      const dup = await sql`
+        select 1 from payments p
+        left join payment_allocations pa on pa.payment_id = p.id
+        where p.supplier_id = ${inv.supplierId} and p.amount = ${amount}
+          and (p.kind = 'transfer' or pa.invoice_id = ${inv.id})
+          and p.payment_date is not distinct from ${payDate}
+          and p.reference is not distinct from ${reference}
+      `;
+      if (dup.length) {
         warnings.push(`پرداخت ${amount} فاکتور ${invNo} از قبل ثبت شده بود و دوباره اضافه نشد`);
         continue;
       }
-      const [inv] = await sql`select supplier_id from invoices where id = ${invoiceId}`;
-      const [payRow] = await sql`
-        insert into payments (supplier_id, payment_date, amount, method, reference, notes)
-        values (${inv.supplier_id}, ${payDate}, ${amount},
-                ${text(pick(r, "روش پرداخت"))}, ${reference}, ${text(pick(r, "توضیحات"))})
-        returning id
-      `;
-      await sql`insert into payment_allocations (payment_id, invoice_id, amount) values (${payRow.id}, ${invoiceId}, ${amount})`;
-      counts["پرداخت"]++;
+      await insertCharge(inv.supplierId, inv.currency, amount, payDate,
+        text(pick(r, "روش پرداخت")), reference, text(pick(r, "توضیحات")));
+      const applied = Math.min(amount, inv.balance);
+      if (applied > 0.005) {
+        await insertSettlement(inv.supplierId, inv.currency, inv.id, applied, payDate, reference, null);
+      }
+      if (amount - applied > 0.005) {
+        warnings.push(`${amount - applied} از پرداخت فاکتور ${invNo} بیشتر از مانده بود و در کیف‌پول تأمین‌کننده ماند`);
+      }
     }
   }
 

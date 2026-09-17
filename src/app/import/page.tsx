@@ -1,12 +1,26 @@
 import { requirePermission } from "@/lib/auth";
+import { isoToJalaliString } from "@/lib/jalali";
 import { Page } from "@/components/Nav";
 import { Button, Card, Note } from "@/components/geist";
+import { getBackupStatus } from "@/lib/backup";
 import { ImportForm } from "./ImportForm";
+import { DataSafety } from "./DataSafety";
+
+const TZ = process.env.APP_TIMEZONE || "Asia/Tehran";
+
+function backupLabel(iso: string | null) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  const ymd = new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+  const time = new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit" }).format(d);
+  return `${isoToJalaliString(ymd)} ساعت ${time}`;
+}
 
 export const dynamic = "force-dynamic";
 
 export default async function ImportPage() {
   const me = await requirePermission("import");
+  const backupStatus = await getBackupStatus();
   return (
     <Page
       active="/import"
@@ -28,6 +42,15 @@ export default async function ImportPage() {
               <ImportForm />
             </div>
           </Card>
+          <div className="mt-4">
+            <Card title="پشتیبان‌گیری و حذف داده‌ها">
+              <DataSafety
+                status={backupStatus}
+                lastBackupLabel={backupLabel(backupStatus.lastBackupAt)}
+                isAdmin={me.role === "admin"}
+              />
+            </Card>
+          </div>
         </div>
 
         <Card title="فایل باید چه شکلی باشد؟">
@@ -42,7 +65,8 @@ export default async function ImportPage() {
               <li><b>اقلام فاکتور</b> — شماره فاکتور، کد کالا/SKU، شرح کالا، تعداد فاکتور، قیمت واحد</li>
               <li><b>پارت‌های ارسال</b> — شماره پارت ارسال، نام کارگو، نوع حمل، تاریخ‌ها، هزینه حمل پارت</li>
               <li><b>تخصیص اقلام به ارسال</b> — شماره فاکتور، شماره پارت ارسال، کد کالا/SKU، تعداد ارسال‌شده</li>
-              <li><b>پرداخت‌ها</b> — شماره فاکتور، تاریخ پرداخت، مبلغ پرداخت، روش پرداخت</li>
+              <li><b>شارژ کیف‌پول</b> — نام تأمین‌کننده، ارز، تاریخ، مبلغ، روش پرداخت (پول واقعی واریزشده)</li>
+              <li><b>تسویه فاکتور</b> — شماره فاکتور، تاریخ، مبلغ از اعتبار (مصرف اعتبار کیف‌پول روی فاکتور)</li>
             </ul>
             <Note type="warning" title="نکته">
               ستون‌های محاسباتی (مانده، سرشکن حمل، وضعیت‌ها) خوانده نمی‌شوند چون برنامه خودش آن‌ها را
